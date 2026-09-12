@@ -1,0 +1,30 @@
+{
+  "name": "google-business-profile-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Google Business Profile Management & Playwright Scraper full-stack application",
+  "scripts": {
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"call scripts\\start-backend.bat\" \"npm --prefix frontend run dev\"",
+    "dev:all": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"call scripts\\start-backend.bat\" \"npm --prefix frontend run dev\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "call scripts\\start-backend.bat",
+    "start": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"call scripts\\start-backend.bat\" \"npm --prefix frontend run dev\"",
+    "start:backend": "call scripts\\start-backend.bat",
+    "build:frontend": "npm --prefix frontend run build",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "preview:frontend": "npm --prefix frontend run preview"
+  },
+  "keywords": [
+    "google-business-profile",
+    "fastapi",
+    "playwright",
+    "react",
+    "vite",
+    "mysql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

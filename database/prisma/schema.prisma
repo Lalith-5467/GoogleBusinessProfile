@@ -1,0 +1,132 @@
+// Prisma Schema reflecting the MySQL Database Structure
+// Database: googlebusinessprofile
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model GoogleBusinessAccount {
+  id                 String                   @id @default(uuid()) @db.VarChar(191)
+  applicationUserId  String?                  @map("application_user_id") @db.VarChar(191)
+  googleAccountId    String                   @unique @map("google_account_id") @db.VarChar(255)
+  accountName        String?                  @map("account_name") @db.VarChar(255)
+  email              String?                  @db.VarChar(255)
+  accessToken        String?                  @map("access_token") @db.Text
+  refreshToken       String?                  @map("refresh_token") @db.Text
+  tokenExpiry        DateTime?                @map("token_expiry")
+  connectionStatus   String                   @default("CONNECTED") @map("connection_status") @db.VarChar(50)
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @default(now()) @updatedAt @map("updated_at")
+  locations          GoogleBusinessLocation[]
+
+  @@map("google_business_accounts")
+}
+
+model GoogleBusinessLocation {
+  id                      String                 @id @default(uuid()) @db.VarChar(191)
+  googleBusinessAccountId String?                @map("google_business_account_id") @db.VarChar(191)
+  googleLocationId        String?                @unique @map("google_location_id") @db.VarChar(255)
+  businessName            String                 @map("business_name") @db.VarChar(255)
+  area                    String?                @db.VarChar(255)
+  city                    String?                @db.VarChar(255)
+  address                 String?                @db.Text
+  source                  String                 @default("Google API") @db.VarChar(191)
+  status                  String                 @default("ACTIVE") @db.VarChar(50)
+  lastSyncedAt            DateTime?              @default(now()) @map("last_synced_at")
+  createdAt               DateTime               @default(now()) @map("created_at")
+  updatedAt               DateTime               @default(now()) @updatedAt @map("updated_at")
+
+  account                 GoogleBusinessAccount? @relation(fields: [googleBusinessAccountId], references: [id], onDelete: Cascade)
+
+  @@index([googleBusinessAccountId], map: "idx_locations_account_id")
+  @@index([city], map: "idx_locations_city")
+  @@index([status], map: "idx_locations_status")
+  @@map("google_business_locations")
+}
+
+model ScrapedBusiness {
+  id                   String    @id @default(uuid()) @db.VarChar(191)
+  sourceUrl            String    @map("source_url") @db.Text
+  businessName         String    @map("business_name") @db.VarChar(255)
+  alternateName        String?   @map("alternate_name") @db.VarChar(255)
+  primaryCategory      String?   @map("primary_category") @db.VarChar(255)
+  additionalCategories String?   @map("additional_categories") @db.Text
+  description          String?   @db.Text
+  aboutUs              String?   @map("about_us") @db.Text
+  rating               String?   @db.VarChar(50)
+  reviewCount          String?   @map("review_count") @db.VarChar(50)
+  priceLevel           String?   @map("price_level") @db.VarChar(50)
+  businessStatus       String?   @map("business_status") @db.VarChar(50)
+  openNow              String?   @map("open_now") @db.VarChar(50)
+
+  // Location fields
+  address              String?   @db.Text
+  addressLine1         String?   @map("address_line_1") @db.VarChar(255)
+  addressLine2         String?   @map("address_line_2") @db.VarChar(255)
+  area                 String?   @db.VarChar(255)
+  neighborhood         String?   @db.VarChar(255)
+  city                 String?   @db.VarChar(255)
+  district             String?   @db.VarChar(255)
+  state                String?   @db.VarChar(255)
+  country              String?   @db.VarChar(255)
+  postalCode           String?   @map("postal_code") @db.VarChar(100)
+  latitude             String?   @db.VarChar(100)
+  longitude            String?   @db.VarChar(100)
+  plusCode             String?   @map("plus_code") @db.VarChar(100)
+
+  // Contact fields
+  phone                String?   @db.VarChar(100)
+  secondaryPhone       String?   @map("secondary_phone") @db.VarChar(100)
+  phoneLandline        String?   @map("phone_landline") @db.VarChar(100)
+  phoneMobile          String?   @map("phone_mobile") @db.VarChar(100)
+  email                String?   @db.VarChar(255)
+  website              String?   @db.Text
+  googleMapsUrl        String?   @map("google_maps_url") @db.Text
+
+  // Hours
+  mondayHours          String?   @map("monday_hours") @db.VarChar(255)
+  tuesdayHours         String?   @map("tuesday_hours") @db.VarChar(255)
+  wednesdayHours       String?   @map("wednesday_hours") @db.VarChar(255)
+  thursdayHours        String?   @map("thursday_hours") @db.VarChar(255)
+  fridayHours          String?   @map("friday_hours") @db.VarChar(255)
+  saturdayHours        String?   @map("saturday_hours") @db.VarChar(255)
+  sundayHours          String?   @map("sunday_hours") @db.VarChar(255)
+  openingHours         String?   @map("opening_hours") @db.Text
+  todayOpenStatus      String?   @map("today_open_status") @db.VarChar(100)
+
+  // Google attributes
+  services             String?   @db.Text
+  amenities            String?   @db.Text
+  accessibility        String?   @db.Text
+  paymentOptions       String?   @map("payment_options") @db.Text
+  delivery             String?   @db.VarChar(50)
+  dineIn               String?   @map("dine_in") @db.VarChar(50)
+  pickup               String?   @db.VarChar(50)
+  reservationUrl       String?   @map("reservation_url") @db.Text
+  menuUrl              String?   @map("menu_url") @db.Text
+
+  // Source & Tracking
+  sourceType           String    @default("WEBSITE_SCRAPE") @map("source_type") @db.VarChar(50)
+  searchKeyword        String?   @map("search_keyword") @db.VarChar(255)
+  searchArea           String?   @map("search_area") @db.VarChar(255)
+  googlePlaceId        String?   @map("google_place_id") @db.VarChar(255)
+  googleCid            String?   @map("google_cid") @db.VarChar(255)
+  dataSource           String?   @map("data_source") @db.VarChar(100)
+  enrichmentStatus     String?   @map("enrichment_status") @db.VarChar(100)
+  status               String    @default("ACTIVE") @db.VarChar(50)
+  scrapedAt            DateTime  @default(now()) @map("scraped_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([businessName], map: "idx_scraped_business_name")
+  @@index([city], map: "idx_scraped_city")
+  @@index([primaryCategory], map: "idx_scraped_category")
+  @@index([status], map: "idx_scraped_status")
+  @@index([createdAt], map: "idx_scraped_created_at")
+  @@map("scraped_businesses")
+}

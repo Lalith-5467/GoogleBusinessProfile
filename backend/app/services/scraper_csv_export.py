@@ -1,0 +1,141 @@
+import csv
+import io
+from typing import List
+from app.models.scraped_business import ScrapedBusiness
+
+def generate_scraped_businesses_csv(businesses: List[ScrapedBusiness]) -> str:
+    """
+    Generates RFC-4180 compliant CSV string from ScrapedBusiness records in MySQL.
+    Contains complete 58 columns representing all scraped & enriched business data.
+    """
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    
+    # Write CSV Header - COMPLETE 58 COLUMNS
+    headers = [
+        "Business Name",
+        "Alternate Name",
+        "Primary Category",
+        "Additional Categories",
+        "About Us / Description",
+        "Rating",
+        "Review Count",
+        "Price Level",
+        "Business Status",
+        "Open Now",
+        "Full Address",
+        "Address Line 1",
+        "Address Line 2",
+        "Area / Locality",
+        "Neighborhood",
+        "City",
+        "District",
+        "State",
+        "Country",
+        "Postal Code",
+        "Latitude",
+        "Longitude",
+        "Plus Code",
+        "Primary Phone",
+        "Secondary Phone",
+        "Landline Phone",
+        "Mobile Phone",
+        "Email",
+        "Website",
+        "Google Maps URL",
+        "Monday Hours",
+        "Tuesday Hours",
+        "Wednesday Hours",
+        "Thursday Hours",
+        "Friday Hours",
+        "Saturday Hours",
+        "Sunday Hours",
+        "Opening Hours",
+        "Today Open Status",
+        "Services",
+        "Amenities",
+        "Accessibility",
+        "Payment Options",
+        "Delivery",
+        "Dine In",
+        "Pickup",
+        "Reservation URL",
+        "Menu URL",
+        "Original Input URL",
+        "Source Type",
+        "Search Keyword",
+        "Search Area",
+        "Google Place ID",
+        "Google CID",
+        "Data Source",
+        "Enrichment Status",
+        "Scrape Status",
+        "Scraped At"
+    ]
+    writer.writerow(headers)
+    
+    for biz in businesses:
+        writer.writerow([
+            biz.business_name or "",
+            biz.alternate_name or "",
+            biz.primary_category or "",
+            biz.additional_categories or "",
+            biz.about_us or biz.description or "",
+            biz.rating or "",
+            biz.review_count or "",
+            biz.price_level or "",
+            biz.business_status or "",
+            biz.open_now or "",
+            biz.address or "",
+            biz.address_line_1 or "",
+            biz.address_line_2 or "",
+            biz.area or "",
+            biz.neighborhood or "",
+            biz.city or "",
+            biz.district or "",
+            biz.state or "",
+            biz.country or "",
+            biz.postal_code or "",
+            biz.latitude or "",
+            biz.longitude or "",
+            biz.plus_code or "",
+            biz.phone or "",
+            biz.secondary_phone or "",
+            biz.phone_landline or "",
+            biz.phone_mobile or "",
+            biz.email or "",
+            biz.website or "",
+            biz.google_maps_url or "",
+            biz.monday_hours or "",
+            biz.tuesday_hours or "",
+            biz.wednesday_hours or "",
+            biz.thursday_hours or "",
+            biz.friday_hours or "",
+            biz.saturday_hours or "",
+            biz.sunday_hours or "",
+            biz.opening_hours or "",
+            biz.today_open_status or "",
+            biz.services or "",
+            biz.amenities or "",
+            biz.accessibility or "",
+            biz.payment_options or "",
+            biz.delivery or "",
+            biz.dine_in or "",
+            biz.pickup or "",
+            biz.reservation_url or "",
+            biz.menu_url or "",
+            biz.source_url or "",
+            biz.source_type or "",
+            biz.search_keyword or "",
+            biz.search_area or "",
+            biz.google_place_id or "",
+            biz.google_cid or "",
+            biz.data_source or "",
+            biz.enrichment_status or "",
+            biz.status or "ACTIVE",
+            biz.scraped_at.isoformat() if biz.scraped_at else ""
+        ])
+        
+    return output.getvalue()
+
+
