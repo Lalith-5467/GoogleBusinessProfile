@@ -1,8 +1,10 @@
 /**
  * Centralized API Configuration
  */
+const envApiUrl = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+
 export const API_CONFIG = {
-  BASE_URL: '',
+  BASE_URL: envApiUrl,
   GOOGLE_BUSINESS: {
     STATUS: '/api/google-business/status',
     AUTH_URL: '/api/google-business/auth/url',

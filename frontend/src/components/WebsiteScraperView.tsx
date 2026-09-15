@@ -297,26 +297,26 @@ export const WebsiteScraperView: React.FC = () => {
   const paginatedBusinesses = displayedBusinesses.slice(startIndex, startIndex + pageSize);
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
       {/* Header Card */}
-      <div className="bg-white border border-[#DDE5DE] rounded-[16px] p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm">
-        <div className="space-y-1.5">
+      <div className="bg-white border border-[#DDE5DE] rounded-[16px] p-4 sm:p-6 md:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 shadow-sm">
+        <div className="space-y-1.5 min-w-0">
           <div className="flex items-center gap-2 text-[#6B8F71] font-heading font-semibold text-xs uppercase tracking-wider">
-            <Globe className="w-4 h-4" />
+            <Globe className="w-4 h-4 shrink-0" />
             Website Scraper Module
           </div>
-          <h1 className="text-2xl sm:text-3xl font-heading font-bold text-[#1D1E18] tracking-tight">
-            Website & Google Business Scraper
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-heading font-bold text-[#1D1E18] tracking-tight leading-tight">
+            Website &amp; Google Business Scraper
           </h1>
-          <p className="text-[#68736B] text-sm max-w-xl">
-            Extract, enrich, and store comprehensive business metadata, ratings, reviews, addresses, and contact info from public URLs & Google Maps.
+          <p className="text-[#68736B] text-xs sm:text-sm max-w-xl">
+            Extract, enrich, and store comprehensive business metadata, ratings, reviews, addresses, and contact info from public URLs &amp; Google Maps.
           </p>
         </div>
 
         {/* PROMINENT TOTAL BUSINESSES CARD */}
-        <div className="flex items-center gap-4 bg-[#F6F8F5] p-4 sm:p-5 rounded-[16px] border border-[#DDE5DE] min-w-[220px]">
-          <div className="p-3 bg-[#EAF4EE] rounded-[10px] text-[#6B8F71] border border-[#AAD2BA]">
-            <Database className="w-6 h-6" />
+        <div className="flex items-center gap-3 sm:gap-4 bg-[#F6F8F5] p-3.5 sm:p-5 rounded-[16px] border border-[#DDE5DE] w-full sm:w-auto shrink-0">
+          <div className="p-2.5 sm:p-3 bg-[#EAF4EE] rounded-[10px] text-[#6B8F71] border border-[#AAD2BA] shrink-0">
+            <Database className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
             <div className="text-[11px] font-heading font-bold text-[#68736B] uppercase tracking-wider">
@@ -337,9 +337,9 @@ export const WebsiteScraperView: React.FC = () => {
       </div>
 
       {/* SCRAPER CARDS GRID: 2 COLUMNS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Single URL Scraper Card */}
-        <div className="bg-white p-6 rounded-[16px] border border-[#DDE5DE] shadow-sm space-y-4 flex flex-col justify-between">
+        <div className="bg-white p-4 sm:p-6 rounded-[16px] border border-[#DDE5DE] shadow-sm space-y-4 flex flex-col justify-between">
           <div>
             <h3 className="text-base font-heading font-bold text-[#1D1E18] flex items-center gap-2 mb-1">
               <Globe className="w-5 h-5 text-[#6B8F71]" />
@@ -367,8 +367,8 @@ export const WebsiteScraperView: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center justify-between text-xs text-[#68736B]">
-              <span className="truncate max-w-[220px]">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 text-xs text-[#68736B]">
+              <span className="truncate max-w-full sm:max-w-[220px]">
                 {scrapingSingle ? (
                   <span className="text-[#6B8F71] font-semibold flex items-center gap-1.5 truncate">
                     <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
@@ -381,7 +381,7 @@ export const WebsiteScraperView: React.FC = () => {
               <button
                 type="submit"
                 disabled={scrapingSingle}
-                className="px-4 py-2 rounded-[10px] text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white transition-all shadow-sm shrink-0"
+                className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 rounded-[10px] text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white transition-all shadow-sm shrink-0"
               >
                 {scrapingSingle ? 'Analyzing...' : 'Scrape'}
               </button>
@@ -390,7 +390,7 @@ export const WebsiteScraperView: React.FC = () => {
         </div>
 
         {/* Bulk Business Scraper Card */}
-        <div className="bg-white p-6 rounded-[16px] border border-[#DDE5DE] shadow-sm space-y-4 flex flex-col justify-between">
+        <div className="bg-white p-4 sm:p-6 rounded-[16px] border border-[#DDE5DE] shadow-sm space-y-4 flex flex-col justify-between">
           <div>
             <h3 className="text-base font-heading font-bold text-[#1D1E18] flex items-center gap-2 mb-1">
               <Layers className="w-5 h-5 text-[#6B8F71]" />
@@ -429,12 +429,12 @@ export const WebsiteScraperView: React.FC = () => {
 
       {/* BULK SCRAPING METRICS SUMMARY */}
       {bulkMetrics && (
-        <div className="bg-white p-5 rounded-[16px] border border-[#DDE5DE] space-y-3 shadow-sm animate-fadeIn">
+        <div className="bg-white p-4 sm:p-5 rounded-[16px] border border-[#DDE5DE] space-y-3 shadow-sm animate-fadeIn">
           <div className="text-xs font-heading font-bold text-[#68736B] uppercase tracking-wider">
             Bulk Scraping Metrics
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4 text-center">
             <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
               <div className="text-xs text-[#68736B]">Total URLs</div>
               <div className="text-lg font-heading font-bold text-[#1D1E18] mt-0.5">{bulkMetrics.total_urls}</div>
@@ -460,22 +460,22 @@ export const WebsiteScraperView: React.FC = () => {
 
       {/* NOTIFICATIONS / FEEDBACK ALERTS */}
       {error && (
-        <div className="p-4 bg-red-50 border border-[#C94A4A]/30 rounded-[12px] text-[#C94A4A] text-sm flex items-center gap-3 animate-fadeIn">
-          <AlertTriangle className="w-5 h-5 text-[#C94A4A] shrink-0" />
-          <span className="font-medium">{error}</span>
+        <div className="p-4 bg-red-50 border border-[#C94A4A]/30 rounded-[12px] text-[#C94A4A] text-sm flex items-start gap-3 animate-fadeIn">
+          <AlertTriangle className="w-5 h-5 text-[#C94A4A] shrink-0 mt-0.5" />
+          <span className="font-medium break-words min-w-0">{error}</span>
         </div>
       )}
 
       {successMsg && (
-        <div className="p-4 bg-[#EAF4EE] border border-[#AAD2BA] rounded-[12px] text-[#2F7D4A] text-sm flex items-center gap-3 animate-fadeIn">
-          <CheckCircle2 className="w-5 h-5 text-[#2F7D4A] shrink-0" />
-          <span className="font-medium">{successMsg}</span>
+        <div className="p-4 bg-[#EAF4EE] border border-[#AAD2BA] rounded-[12px] text-[#2F7D4A] text-sm flex items-start gap-3 animate-fadeIn">
+          <CheckCircle2 className="w-5 h-5 text-[#2F7D4A] shrink-0 mt-0.5" />
+          <span className="font-medium break-words min-w-0">{successMsg}</span>
         </div>
       )}
 
       {/* SCRAPING RESULTS CARD */}
-      <div className="bg-white rounded-[16px] border border-[#DDE5DE] shadow-sm overflow-hidden space-y-4 p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#DDE5DE] pb-4">
+      <div className="bg-white rounded-[16px] border border-[#DDE5DE] shadow-sm overflow-hidden space-y-4 p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 border-b border-[#DDE5DE] pb-4">
           <div>
             <h3 className="text-lg font-heading font-bold text-[#1D1E18] flex items-center gap-2">
               Scraping Results
@@ -485,27 +485,28 @@ export const WebsiteScraperView: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-xs font-semibold text-[#1D1E18] bg-[#F6F8F5] px-3 py-1.5 rounded-[8px] border border-[#DDE5DE]">
-              Total Businesses: <span className="text-[#6B8F71] font-bold">{displayedBusinesses.length}</span>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <div className="text-xs font-semibold text-[#1D1E18] bg-[#F6F8F5] px-3 py-1.5 rounded-[8px] border border-[#DDE5DE] shrink-0">
+              Businesses: <span className="text-[#6B8F71] font-bold">{displayedBusinesses.length}</span>
             </div>
 
             {totalCount > 0 && (
               <button
                 onClick={toggleHistoryMode}
-                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-[8px] bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border border-[#DDE5DE] transition-all font-medium"
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-[8px] bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border border-[#DDE5DE] transition-all font-medium shrink-0"
               >
-                <History className="w-3.5 h-3.5 text-[#6B8F71]" />
-                {activeOperationMode === 'HISTORY'
+                <History className="w-3.5 h-3.5 text-[#6B8F71] shrink-0" />
+                <span className="hidden sm:inline">{activeOperationMode === 'HISTORY'
                   ? 'View Current Results'
-                  : `View All Stored History (${totalCount})`}
+                  : `View All History (${totalCount})`}</span>
+                <span className="inline sm:hidden">{activeOperationMode === 'HISTORY' ? 'Current' : `History (${totalCount})`}</span>
               </button>
             )}
 
             <button
               onClick={handleExportCsv}
               disabled={exporting || loading || (activeOperationMode === 'HISTORY' ? totalCount === 0 : currentOperationResults.length === 0)}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold border transition-all ${
+              className={`inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-[10px] text-xs font-heading font-semibold border transition-all shrink-0 ${
                 exporting || loading || (activeOperationMode === 'HISTORY' ? totalCount === 0 : currentOperationResults.length === 0)
                   ? 'bg-[#F6F8F5] border-[#DDE5DE] text-[#68736B]/40 cursor-not-allowed'
                   : 'bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white border-transparent shadow-sm'
@@ -514,25 +515,26 @@ export const WebsiteScraperView: React.FC = () => {
               {exporting ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
               ) : (
-                <Download className="w-3.5 h-3.5 text-white" />
+                <Download className="w-3.5 h-3.5" />
               )}
-              {exporting
+              <span className="hidden sm:inline">{exporting
                 ? 'Exporting...'
                 : activeOperationMode === 'HISTORY'
-                  ? 'Export Complete History CSV'
-                  : 'Export CSV'}
+                  ? 'Export History CSV'
+                  : 'Export CSV'}</span>
+              <span className="inline sm:hidden">CSV</span>
             </button>
           </div>
         </div>
 
         {/* RESULTS TABLE */}
         {loading ? (
-          <div className="p-12 text-center text-[#68736B] space-y-3">
+          <div className="p-8 sm:p-12 text-center text-[#68736B] space-y-3">
             <Loader2 className="w-8 h-8 animate-spin text-[#6B8F71] mx-auto" />
             <p className="text-sm font-heading font-medium text-[#1D1E18]">Loading business results from MySQL...</p>
           </div>
         ) : displayedBusinesses.length === 0 ? (
-          <div className="p-12 text-center space-y-2">
+          <div className="p-8 sm:p-12 text-center space-y-2">
             <h4 className="text-base font-heading font-semibold text-[#1D1E18]">
               No business results yet.
             </h4>
@@ -542,16 +544,16 @@ export const WebsiteScraperView: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="overflow-x-auto rounded-[12px] border border-[#DDE5DE]">
-              <table className="w-full text-left text-xs sm:text-sm text-[#1D1E18]">
+            <div className="table-responsive rounded-[12px] border border-[#DDE5DE]">
+              <table className="w-full min-w-[560px] text-left text-xs sm:text-sm text-[#1D1E18]">
                 <thead className="bg-[#F6F8F5] text-xs uppercase tracking-wider text-[#68736B] border-b border-[#DDE5DE] font-heading font-bold">
                   <tr>
-                    <th scope="col" className="px-5 py-3.5 font-bold text-[#1D1E18]">BUSINESS NAME</th>
-                    <th scope="col" className="px-5 py-3.5 font-bold text-[#1D1E18]">CATEGORY</th>
-                    <th scope="col" className="px-5 py-3.5 font-bold text-[#1D1E18]">RATING / REVIEWS</th>
-                    <th scope="col" className="px-5 py-3.5 font-bold text-[#1D1E18]">AREA & CITY</th>
-                    <th scope="col" className="px-5 py-3.5 font-bold text-[#1D1E18]">PHONE NUMBER</th>
-                    <th scope="col" className="px-5 py-3.5 font-bold text-[#1D1E18] text-right">ACTION</th>
+                    <th scope="col" className="px-4 sm:px-5 py-3.5 font-bold text-[#1D1E18]">BUSINESS NAME</th>
+                    <th scope="col" className="px-4 sm:px-5 py-3.5 font-bold text-[#1D1E18]">CATEGORY</th>
+                    <th scope="col" className="px-4 sm:px-5 py-3.5 font-bold text-[#1D1E18]">RATING / REVIEWS</th>
+                    <th scope="col" className="px-4 sm:px-5 py-3.5 font-bold text-[#1D1E18]">AREA & CITY</th>
+                    <th scope="col" className="px-4 sm:px-5 py-3.5 font-bold text-[#1D1E18]">PHONE NUMBER</th>
+                    <th scope="col" className="px-4 sm:px-5 py-3.5 font-bold text-[#1D1E18] text-right">ACTION</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#DDE5DE] bg-white">
@@ -565,9 +567,9 @@ export const WebsiteScraperView: React.FC = () => {
                         key={biz.id}
                         className="hover:bg-[#F6F8F5]/60 transition-colors"
                       >
-                        <td className="px-5 py-4">
-                          <div className="font-bold text-[#1D1E18] flex items-center gap-2">
-                            <span>{biz.business_name}</span>
+                        <td className="px-4 sm:px-5 py-3.5 sm:py-4">
+                          <div className="font-bold text-[#1D1E18] flex flex-wrap items-center gap-2">
+                            <span className="break-words min-w-0">{biz.business_name}</span>
                             {biz.enrichment_status === 'MATCHED' && (
                               <span className="px-2 py-0.5 text-[10px] font-bold bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA] rounded">
                                 Enriched
@@ -580,7 +582,7 @@ export const WebsiteScraperView: React.FC = () => {
                             </div>
                           )}
                         </td>
-                        <td className="px-5 py-4 text-xs font-medium">
+                        <td className="px-4 sm:px-5 py-3.5 sm:py-4 text-xs font-medium">
                           {biz.primary_category ? (
                             <span className="inline-flex items-center gap-1 bg-[#F6F8F5] px-2 py-1 rounded-[6px] border border-[#DDE5DE] text-[#68736B]">
                               <Tag className="w-3 h-3 text-[#6B8F71]" />
@@ -590,7 +592,7 @@ export const WebsiteScraperView: React.FC = () => {
                             <span className="text-[#68736B] italic">N/A</span>
                           )}
                         </td>
-                        <td className="px-5 py-4 text-xs">
+                        <td className="px-4 sm:px-5 py-3.5 sm:py-4 text-xs">
                           {biz.rating ? (
                             <div className="flex items-center gap-1.5">
                               <span className="inline-flex items-center gap-1 font-bold text-[#B7791F]">
@@ -599,7 +601,7 @@ export const WebsiteScraperView: React.FC = () => {
                               </span>
                               {biz.review_count && (
                                 <span className="text-[#68736B] text-[11px]">
-                                  ({biz.review_count})
+                                   ({biz.review_count})
                                 </span>
                               )}
                             </div>
@@ -607,14 +609,14 @@ export const WebsiteScraperView: React.FC = () => {
                             <span className="text-[#68736B] italic">No ratings</span>
                           )}
                         </td>
-                        <td className="px-5 py-4 text-xs text-[#1D1E18]">
+                        <td className="px-4 sm:px-5 py-3.5 sm:py-4 text-xs text-[#1D1E18]">
                           <div className="space-y-0.5">
                             {biz.area && <div className="font-medium text-[#1D1E18]">{biz.area}</div>}
                             {biz.city && <div className="text-[#68736B]">{biz.city}{biz.state ? `, ${biz.state}` : ''}</div>}
                             {!biz.area && !biz.city && <span className="text-[#68736B] italic">N/A</span>}
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-xs font-mono">
+                        <td className="px-4 sm:px-5 py-3.5 sm:py-4 text-xs font-mono">
                           {(() => {
                             if (hasLandline && hasMobile && biz.phone_landline !== biz.phone_mobile) {
                               return (
@@ -648,7 +650,7 @@ export const WebsiteScraperView: React.FC = () => {
                             }
                           })()}
                         </td>
-                        <td className="px-5 py-4 text-right">
+                        <td className="px-4 sm:px-5 py-3.5 sm:py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => setSelectedBusiness(biz)}
@@ -681,11 +683,11 @@ export const WebsiteScraperView: React.FC = () => {
 
             {/* PAGINATION CONTROLS */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-2 py-2 text-xs text-[#68736B]">
-                <div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 py-2 text-xs text-[#68736B]">
+                <div className="text-center sm:text-left">
                   Showing {startIndex + 1} to {Math.min(startIndex + pageSize, totalItems)} of {totalItems} results
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
@@ -732,14 +734,14 @@ export const WebsiteScraperView: React.FC = () => {
 
       {/* COMPREHENSIVE BUSINESS DETAILS MODAL (20px radius) */}
       {selectedBusiness && (
-        <div className="fixed inset-0 z-50 bg-[#1D1E18]/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-3xl p-6 sm:p-8 space-y-6 shadow-2xl animate-fadeIn my-8 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-[#1D1E18]/50 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="modal-safe bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-3xl p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 shadow-2xl animate-fadeIn my-4 sm:my-8">
             
             {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-[#DDE5DE] pb-4 gap-4">
+            <div className="flex items-start justify-between border-b border-[#DDE5DE] pb-4 gap-3">
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-heading font-bold text-[#1D1E18] tracking-tight">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base sm:text-lg md:text-xl font-heading font-bold text-[#1D1E18] tracking-tight break-words">
                     {selectedBusiness.business_name}
                   </h2>
                   {selectedBusiness.enrichment_status === 'MATCHED' && (
@@ -756,17 +758,17 @@ export const WebsiteScraperView: React.FC = () => {
               </div>
               <button 
                 onClick={() => setSelectedBusiness(null)} 
-                className="text-[#68736B] hover:text-[#1D1E18] p-1.5 rounded-[8px] hover:bg-[#F6F8F5] transition-colors"
+                className="text-[#68736B] hover:text-[#1D1E18] p-2 rounded-[8px] bg-[#F6F8F5] hover:bg-[#DDE5DE]/50 transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Grid Sections */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 text-sm">
               
               {/* Section 1: Overview & Rating */}
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE] space-y-3">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-3">
                 <h3 className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-[#6B8F71]" />
                   Business Overview
@@ -785,7 +787,7 @@ export const WebsiteScraperView: React.FC = () => {
                         ★ {selectedBusiness.rating} {selectedBusiness.review_count ? `(${selectedBusiness.review_count} reviews)` : ''}
                       </span>
                     ) : (
-                      <span className="text-[#68736B] italic">Not available</span>
+                      <span className="text-[#68736B]">Not available</span>
                     )}
                   </div>
 
@@ -806,7 +808,7 @@ export const WebsiteScraperView: React.FC = () => {
               </div>
 
               {/* Section 2: Contact Numbers */}
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE] space-y-3">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-3">
                 <h3 className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-2">
                   <Phone className="w-4 h-4 text-[#6B8F71]" />
                   Contact Details
@@ -835,20 +837,20 @@ export const WebsiteScraperView: React.FC = () => {
                   {selectedBusiness.email && (
                     <div className="font-sans">
                       <span className="text-[#68736B]">Email:</span>{' '}
-                      <a href={`mailto:${selectedBusiness.email}`} className="text-[#6B8F71] hover:underline">{selectedBusiness.email}</a>
+                      <a href={`mailto:${selectedBusiness.email}`} className="text-[#6B8F71] hover:underline break-all">{selectedBusiness.email}</a>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Section 3: Address & Location Details */}
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE] space-y-3 md:col-span-2">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-3 md:col-span-2">
                 <h3 className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-[#6B8F71]" />
                   Location & Address
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 text-xs">
                   <div>
                     <span className="text-[#68736B] block mb-1">Full Address:</span>
                     <p className="text-[#1D1E18] leading-relaxed font-medium bg-white p-2.5 rounded-[8px] border border-[#DDE5DE]">
@@ -871,7 +873,7 @@ export const WebsiteScraperView: React.FC = () => {
               </div>
 
               {/* Section 4: About Us / Description */}
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE] space-y-2 md:col-span-2">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-2 md:col-span-2">
                 <h3 className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-2">
                   <FileText className="w-4 h-4 text-[#6B8F71]" />
                   About Us / Description
@@ -882,19 +884,19 @@ export const WebsiteScraperView: React.FC = () => {
               </div>
 
               {/* Section 5: Web Links & Tracking */}
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE] space-y-2 md:col-span-2 text-xs">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-2 md:col-span-2 text-xs">
                 <h3 className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-2 mb-2">
                   <ExternalLink className="w-4 h-4 text-[#6B8F71]" />
                   Links & Source Metadata
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {selectedBusiness.website && (
                     <div>
                       <span className="text-[#68736B] block text-[11px]">Website URL:</span>
-                      <a href={selectedBusiness.website} target="_blank" rel="noreferrer" className="text-[#6B8F71] hover:underline font-mono break-all inline-flex items-center gap-1 mt-0.5">
-                        {selectedBusiness.website}
-                        <ExternalLink className="w-3 h-3 shrink-0" />
+                      <a href={selectedBusiness.website} target="_blank" rel="noreferrer" className="text-[#6B8F71] hover:underline font-mono break-all inline-flex items-start gap-1 mt-0.5">
+                        <span className="break-all">{selectedBusiness.website}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0 mt-0.5" />
                       </a>
                     </div>
                   )}

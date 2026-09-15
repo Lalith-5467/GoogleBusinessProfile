@@ -88,14 +88,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS Configuration for React Frontend (http://localhost:3000)
-origins = [
-    settings.FRONTEND_URL,
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173"
-]
+# CORS Configuration
+origins = settings.get_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -113,11 +107,21 @@ app.include_router(scraper_router)
 @app.get("/api/health", tags=["Health"])
 def health_check():
     """Health check endpoint to verify backend service status."""
+    db_target = "not-configured"
+    if settings.DATABASE_URL:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(settings.DATABASE_URL)
+            db_target = f"{parsed.hostname}:{parsed.port or 3306}{parsed.path}"
+        except Exception:
+            db_target = settings.DATABASE_URL.split("@")[-1]
+
     return {
         "status": "healthy",
         "service": "google-business-backend",
-        "database": settings.DATABASE_URL.split("@")[-1],
-        "port": settings.PORT
+        "database": db_target,
+        "port": settings.PORT,
+        "environment": settings.ENVIRONMENT
     }
 
 if __name__ == "__main__":

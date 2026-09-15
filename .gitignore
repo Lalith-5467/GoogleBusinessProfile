@@ -62,3 +62,8 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Vite environment files
+frontend/.env.production
+frontend/.env.development
+

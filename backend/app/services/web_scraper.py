@@ -90,6 +90,51 @@ def normalize_and_validate_url(raw_url: str) -> Tuple[str, str]:
 
 class WebScraperService:
     @staticmethod
+    async def _launch_browser(playwright_instance):
+        """
+        Safely launches Playwright Chromium with production-safe arguments.
+        Provides automated self-healing if browser executable is missing,
+        and translates low-level missing browser errors into safe messages.
+        """
+        args = [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu"
+        ]
+        try:
+            return await playwright_instance.chromium.launch(
+                headless=True,
+                args=args
+            )
+        except Exception as launch_err:
+            err_str = str(launch_err)
+            if "Executable doesn't exist" in err_str or "playwright install" in err_str:
+                logger.warning(
+                    "Playwright Chromium browser executable is missing. "
+                    "Attempting automatic self-healing installation..."
+                )
+                try:
+                    import subprocess
+                    cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+                    res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+                    if res.returncode == 0:
+                        logger.info("Chromium installed successfully via self-healing. Retrying launch...")
+                        return await playwright_instance.chromium.launch(
+                            headless=True,
+                            args=args
+                        )
+                    else:
+                        logger.error(f"Self-healing Playwright install returned non-zero: {res.stderr}")
+                except Exception as auto_err:
+                    logger.error(f"Self-healing Playwright install failed: {auto_err}")
+
+                raise RuntimeError(
+                    "Website scraping is temporarily unavailable because the scraping browser is not installed."
+                ) from launch_err
+            raise launch_err
+
+    @staticmethod
     async def scrape_single_website(url: str, db: Session) -> Dict[str, Any]:
         """
         Scrapes a target URL (Google Maps Search, Google Maps Place, YouTube, or Business Website),
@@ -115,6 +160,8 @@ class WebScraperService:
                     extracted_list = brand_fallback
                 else:
                     err_str = str(e)
+                    if "Executable doesn't exist" in err_str or "scraping browser is not installed" in err_str:
+                        raise ValueError("Website scraping is temporarily unavailable because the scraping browser is not installed.")
                     if "ERR_HTTP2_PROTOCOL_ERROR" in err_str or "10054" in err_str or "timeout" in err_str.lower() or "connection" in err_str.lower():
                         raise ValueError(f"Unable to scrape '{canonical_url}' directly (website connection blocked by anti-bot firewall). Please try searching by business name in Business Profiles or paste a Google Maps Place URL.")
                     raise ValueError(f"Unable to access this website: {err_str}")
@@ -254,10 +301,7 @@ class WebScraperService:
         Scrolls search results feed, extracts all resolved business cards into complete records.
         """
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
+            browser = await WebScraperService._launch_browser(p)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 900}
@@ -512,10 +556,7 @@ class WebScraperService:
         Extracts complete place fields (Name, Category, Rating, Reviews, Address, Area, City, State, Pin, Lat, Lng, Phone, Landline, Hours, Website, About).
         """
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
+            browser = await WebScraperService._launch_browser(p)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 900}
@@ -990,10 +1031,7 @@ class WebScraperService:
     async def _extract_with_playwright_impl(target_url: str, source_type: str) -> Dict[str, Any]:
         """Uses Playwright Chromium to navigate to public company website and extract DOM metadata."""
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
+            browser = await WebScraperService._launch_browser(p)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 800}

@@ -55,7 +55,7 @@ export interface DeleteResponse {
   total_count: number;
 }
 
-const API_BASE = '';
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 
 export const googleBusinessApi = {
   async getStatus(): Promise<AccountStatus> {

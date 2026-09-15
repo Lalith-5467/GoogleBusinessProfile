@@ -115,7 +115,7 @@ export interface ScraperDeleteResponse {
   total_count: number;
 }
 
-const API_BASE = '';
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 
 export const scraperApi = {
   async scrapeCompany(url: string): Promise<CompanyScrapeResponse> {

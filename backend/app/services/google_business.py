@@ -36,7 +36,7 @@ class GoogleBusinessService:
         if not GoogleBusinessService.is_oauth_configured():
             raise HTTPException(
                 status_code=400,
-                detail="Google OAuth credentials (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET) are not configured in .env file."
+                detail="Google OAuth credentials (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET) are not configured on the server."
             )
         
         client_config = {

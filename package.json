@@ -10,7 +10,11 @@
     "dev:backend": "call scripts\\start-backend.bat",
     "start": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"call scripts\\start-backend.bat\" \"npm --prefix frontend run dev\"",
     "start:backend": "call scripts\\start-backend.bat",
+    "build": "npm --prefix frontend run build",
     "build:frontend": "npm --prefix frontend run build",
+    "build:all": "npm --prefix frontend run build && (playwright install chromium || python -m playwright install chromium || true)",
+    "install:playwright": "playwright install chromium || python -m playwright install chromium || npx playwright install chromium",
+    "install:playwright:deps": "playwright install --with-deps chromium || python -m playwright install --with-deps chromium || npx playwright install --with-deps chromium",
     "lint:frontend": "npm --prefix frontend run lint",
     "preview:frontend": "npm --prefix frontend run preview"
   },

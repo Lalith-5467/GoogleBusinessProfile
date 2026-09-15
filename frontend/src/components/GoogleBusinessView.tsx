@@ -317,26 +317,26 @@ export const GoogleBusinessView: React.FC = () => {
   const paginatedLocations = locations.slice(startIndex, startIndex + pageSize);
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
       {/* 1. Header Banner */}
-      <div className="bg-white border border-[#DDE5DE] rounded-[16px] p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 shadow-sm">
-        <div className="space-y-1.5">
+      <div className="bg-white border border-[#DDE5DE] rounded-[16px] p-4 sm:p-6 md:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 shadow-sm">
+        <div className="space-y-1.5 min-w-0">
           <div className="flex items-center gap-2 text-[#6B8F71] font-heading font-semibold text-xs uppercase tracking-wider">
-            <Building2 className="w-4 h-4" />
+            <Building2 className="w-4 h-4 shrink-0" />
             Workspace
           </div>
-          <h1 className="text-2xl sm:text-3xl font-heading font-bold text-[#1D1E18] tracking-tight">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-heading font-bold text-[#1D1E18] tracking-tight leading-tight">
             Google Business Profiles
           </h1>
-          <p className="text-[#68736B] text-sm max-w-xl">
+          <p className="text-[#68736B] text-xs sm:text-sm max-w-xl">
             Synchronize, search and manage Google Business Profile locations and export collected data to Excel.
           </p>
         </div>
 
         {/* PROMINENT TOTAL BUSINESSES BADGE */}
-        <div className="flex items-center gap-4 bg-[#F6F8F5] p-4 sm:p-5 rounded-[16px] border border-[#DDE5DE] min-w-[220px]">
-          <div className="p-3 bg-[#EAF4EE] rounded-[10px] text-[#6B8F71] border border-[#AAD2BA]">
-            <Database className="w-6 h-6" />
+        <div className="flex items-center gap-3 sm:gap-4 bg-[#F6F8F5] p-3.5 sm:p-5 rounded-[16px] border border-[#DDE5DE] w-full sm:w-auto shrink-0">
+          <div className="p-2.5 sm:p-3 bg-[#EAF4EE] rounded-[10px] text-[#6B8F71] border border-[#AAD2BA] shrink-0">
+            <Database className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
             <div className="text-[11px] font-heading font-bold text-[#68736B] uppercase tracking-wider">
@@ -384,7 +384,7 @@ export const GoogleBusinessView: React.FC = () => {
           {!status.is_connected && status.auth_url_available && (
             <button
               onClick={handleConnectOAuth}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] text-white rounded-[10px] transition-colors shrink-0 shadow-sm"
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] text-white rounded-[10px] transition-colors w-full sm:w-auto shrink-0 shadow-sm"
             >
               Connect Google OAuth
             </button>
@@ -410,7 +410,7 @@ export const GoogleBusinessView: React.FC = () => {
       {/* ================================================== */}
       {/* 3. BUSINESS SEARCH SECTION (CORE SEARCH EXPERIENCE) */}
       {/* ================================================== */}
-      <div className="bg-white rounded-[16px] p-6 sm:p-8 space-y-6 border border-[#DDE5DE] shadow-sm">
+      <div className="bg-white rounded-[16px] p-4 sm:p-6 md:p-8 space-y-6 border border-[#DDE5DE] shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#DDE5DE] pb-5">
           <div className="space-y-1">
             <div className="flex items-center gap-2 text-[#6B8F71] font-heading font-semibold text-xs uppercase tracking-wider">
@@ -427,11 +427,11 @@ export const GoogleBusinessView: React.FC = () => {
           </div>
         </div>
 
-        {/* Search Form (48px input height, 10px radius) */}
+        {/* Search Form — fully responsive: single column on mobile, 2-col on sm, 12-col grid on md+ */}
         <form onSubmit={handleBusinessSearch} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 items-end">
             {/* 1. Total Count */}
-            <div className="md:col-span-3 space-y-1.5">
+            <div className="sm:col-span-1 md:col-span-2 space-y-1.5">
               <label className="block text-xs font-heading font-semibold text-[#1D1E18]">
                 Total Count
               </label>
@@ -444,13 +444,13 @@ export const GoogleBusinessView: React.FC = () => {
                   value={searchCount}
                   onChange={(e) => setSearchCount(e.target.value)}
                   placeholder="e.g. 50"
-                  className="w-full h-12 bg-white border border-[#DDE5DE] rounded-[10px] pl-10 pr-3 py-2 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71] transition-all"
+                  className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] pl-10 pr-3 py-2 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71] transition-all"
                 />
               </div>
             </div>
 
             {/* 2. Business Category / Keyword */}
-            <div className="md:col-span-4 space-y-1.5">
+            <div className="sm:col-span-1 md:col-span-4 space-y-1.5">
               <label className="block text-xs font-heading font-semibold text-[#1D1E18]">
                 Business Category / Keyword *
               </label>
@@ -462,13 +462,13 @@ export const GoogleBusinessView: React.FC = () => {
                   value={searchKeyword}
                   onChange={(e) => setSearchKeyword(e.target.value)}
                   placeholder="e.g. Restaurant, Bakery, Hospital"
-                  className="w-full h-12 bg-white border border-[#DDE5DE] rounded-[10px] pl-10 pr-3 py-2 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71] transition-all"
+                  className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] pl-10 pr-3 py-2 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71] transition-all"
                 />
               </div>
             </div>
 
             {/* 3. Area / Location */}
-            <div className="md:col-span-3 space-y-1.5">
+            <div className="sm:col-span-1 md:col-span-4 space-y-1.5">
               <label className="block text-xs font-heading font-semibold text-[#1D1E18]">
                 Area / Location *
               </label>
@@ -480,17 +480,17 @@ export const GoogleBusinessView: React.FC = () => {
                   value={searchLocation}
                   onChange={(e) => setSearchLocation(e.target.value)}
                   placeholder="e.g. Panruti, Chennai, Adyar"
-                  className="w-full h-12 bg-white border border-[#DDE5DE] rounded-[10px] pl-10 pr-3 py-2 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71] transition-all"
+                  className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] pl-10 pr-3 py-2 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71] transition-all"
                 />
               </div>
             </div>
 
             {/* 4. Search Businesses Button */}
-            <div className="md:col-span-2">
+            <div className="sm:col-span-2 md:col-span-2">
               <button
                 type="submit"
                 disabled={isSearching}
-                className={`w-full h-12 inline-flex items-center justify-center gap-2 px-4 rounded-[10px] text-xs font-heading font-bold text-white transition-all shadow-sm ${
+                className={`w-full h-11 inline-flex items-center justify-center gap-2 px-4 rounded-[10px] text-xs font-heading font-bold text-white transition-all shadow-sm ${
                   isSearching
                     ? 'bg-[#6B8F71]/60 cursor-not-allowed'
                     : 'bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52]'
@@ -504,7 +504,7 @@ export const GoogleBusinessView: React.FC = () => {
                 ) : (
                   <>
                     <Search className="w-4 h-4 text-white" />
-                    <span>Search Businesses</span>
+                    <span>Search</span>
                   </>
                 )}
               </button>
@@ -513,9 +513,9 @@ export const GoogleBusinessView: React.FC = () => {
         </form>
 
         {/* Statistics Cards (Total Searches | Businesses Found | CSV Exports) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-          <div className="bg-[#F6F8F5] rounded-[16px] p-4 border border-[#DDE5DE] flex items-center gap-4">
-            <div className="p-3 bg-white rounded-[10px] text-[#6B8F71] border border-[#DDE5DE] shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 pt-2">
+          <div className="bg-[#F6F8F5] rounded-[14px] sm:rounded-[16px] p-3.5 sm:p-4 border border-[#DDE5DE] flex items-center gap-3.5 sm:gap-4">
+            <div className="p-3 bg-white rounded-[10px] text-[#6B8F71] border border-[#DDE5DE] shadow-sm shrink-0">
               <Search className="w-5 h-5" />
             </div>
             <div>
@@ -524,8 +524,8 @@ export const GoogleBusinessView: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-[#F6F8F5] rounded-[16px] p-4 border border-[#DDE5DE] flex items-center gap-4">
-            <div className="p-3 bg-white rounded-[10px] text-[#2F7D4A] border border-[#DDE5DE] shadow-sm">
+          <div className="bg-[#F6F8F5] rounded-[14px] sm:rounded-[16px] p-3.5 sm:p-4 border border-[#DDE5DE] flex items-center gap-3.5 sm:gap-4">
+            <div className="p-3 bg-white rounded-[10px] text-[#2F7D4A] border border-[#DDE5DE] shadow-sm shrink-0">
               <Building2 className="w-5 h-5" />
             </div>
             <div>
@@ -534,8 +534,8 @@ export const GoogleBusinessView: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-[#F6F8F5] rounded-[16px] p-4 border border-[#DDE5DE] flex items-center gap-4">
-            <div className="p-3 bg-white rounded-[10px] text-[#6B8F71] border border-[#DDE5DE] shadow-sm">
+          <div className="bg-[#F6F8F5] rounded-[14px] sm:rounded-[16px] p-3.5 sm:p-4 border border-[#DDE5DE] flex items-center gap-3.5 sm:gap-4">
+            <div className="p-3 bg-white rounded-[10px] text-[#6B8F71] border border-[#DDE5DE] shadow-sm shrink-0">
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
@@ -547,13 +547,13 @@ export const GoogleBusinessView: React.FC = () => {
 
         {/* Search Results Display Section */}
         {isSearching ? (
-          <div className="p-10 text-center text-[#68736B] space-y-3 bg-[#F6F8F5] rounded-[16px] border border-[#DDE5DE]">
+          <div className="p-8 sm:p-10 text-center text-[#68736B] space-y-3 bg-[#F6F8F5] rounded-[16px] border border-[#DDE5DE]">
             <Loader2 className="w-8 h-8 animate-spin text-[#6B8F71] mx-auto" />
             <p className="text-sm font-heading font-semibold text-[#1D1E18]">Searching nearby businesses...</p>
             <p className="text-xs text-[#68736B]">Querying live Google Maps results for "{searchKeyword}" in "{searchLocation}"</p>
           </div>
         ) : searchError ? (
-          <div className="p-8 text-center space-y-2 bg-red-50 rounded-[16px] border border-[#C94A4A]/30">
+          <div className="p-6 sm:p-8 text-center space-y-2 bg-red-50 rounded-[16px] border border-[#C94A4A]/30">
             <AlertTriangle className="w-6 h-6 text-[#C94A4A] mx-auto mb-1" />
             <p className="text-sm font-heading font-semibold text-[#C94A4A]">Search Operation Failed</p>
             <p className="text-xs text-[#68736B] max-w-md mx-auto">{searchError}</p>
@@ -561,7 +561,7 @@ export const GoogleBusinessView: React.FC = () => {
         ) : searchResults.length > 0 ? (
           <div className="space-y-4 pt-4 border-t border-[#DDE5DE]">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <h3 className="text-base font-heading font-bold text-[#1D1E18]">Search Results</h3>
                 <span className="px-3 py-1 text-xs font-semibold bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA] rounded-full">
                   {searchResults.length} businesses found
@@ -575,7 +575,7 @@ export const GoogleBusinessView: React.FC = () => {
               <button
                 onClick={handleExportSearchCsv}
                 disabled={exporting}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white transition-colors shadow-sm"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white transition-colors shadow-sm"
               >
                 {exporting ? (
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
@@ -590,12 +590,23 @@ export const GoogleBusinessView: React.FC = () => {
               </button>
             </div>
 
-            {/* Results Table (Section 8: Sticky Header, Row Height 56-72px, Checkboxes) */}
-            <div className="overflow-x-auto rounded-[12px] border border-[#DDE5DE] bg-white shadow-sm">
-              <table className="w-full text-left text-xs text-[#1D1E18]">
+            {/* Results Table — professionally styled with fixed column widths and truncation */}
+            <div className="table-responsive rounded-[12px] border border-[#DDE5DE] bg-white shadow-sm overflow-x-auto">
+              <table className="w-full table-fixed min-w-[980px] text-left text-xs text-[#1D1E18]">
+                <colgroup>
+                  <col className="w-[50px]" />
+                  <col className="w-[200px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[160px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[90px]" />
+                </colgroup>
                 <thead className="sticky top-0 bg-[#F6F8F5] uppercase tracking-wider text-[#68736B] border-b border-[#DDE5DE] font-heading font-bold z-10">
                   <tr>
-                    <th className="w-10 px-4 py-3.5 text-center">
+                    <th className="px-3 py-3.5 text-center whitespace-nowrap">
                       <input 
                         type="checkbox" 
                         checked={allResultsSelected}
@@ -604,14 +615,14 @@ export const GoogleBusinessView: React.FC = () => {
                         title="Select All"
                       />
                     </th>
-                    <th className="px-4 py-3.5">BUSINESS NAME</th>
-                    <th className="px-4 py-3.5">AREA</th>
-                    <th className="px-4 py-3.5">CITY</th>
-                    <th className="px-4 py-3.5">CATEGORY</th>
-                    <th className="px-4 py-3.5">RATING</th>
-                    <th className="px-4 py-3.5">REVIEWS</th>
-                    <th className="px-4 py-3.5">PHONE</th>
-                    <th className="px-4 py-3.5 text-right">ACTION</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap overflow-hidden text-ellipsis">BUSINESS NAME</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap overflow-hidden text-ellipsis">AREA</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap overflow-hidden text-ellipsis">CITY</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap overflow-hidden text-ellipsis">CATEGORY</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap overflow-hidden text-ellipsis">RATING</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap overflow-hidden text-ellipsis">REVIEWS</th>
+                    <th className="px-4 py-3.5 whitespace-nowrap overflow-hidden text-ellipsis">PHONE</th>
+                    <th className="px-4 py-3.5 text-right whitespace-nowrap">ACTION</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#DDE5DE]">
@@ -622,7 +633,7 @@ export const GoogleBusinessView: React.FC = () => {
                         key={biz.id} 
                         className={`hover:bg-[#F6F8F5]/80 transition-colors ${isSelected ? 'bg-[#EAF4EE]/50' : ''}`}
                       >
-                        <td className="px-4 py-3.5 text-center">
+                        <td className="px-3 py-3.5 text-center whitespace-nowrap">
                           <input 
                             type="checkbox" 
                             checked={isSelected}
@@ -630,37 +641,43 @@ export const GoogleBusinessView: React.FC = () => {
                             className="w-4 h-4 rounded text-[#6B8F71] focus:ring-[#6B8F71] border-[#DDE5DE] cursor-pointer"
                           />
                         </td>
-                        <td className="px-4 py-3.5 font-bold text-[#1D1E18] max-w-[200px] truncate" title={biz.business_name}>
-                          {biz.business_name}
+                        <td className="px-4 py-3.5 font-bold text-[#1D1E18] truncate whitespace-nowrap" title={biz.business_name}>
+                          {biz.business_name || 'Not available'}
                         </td>
-                        <td className="px-4 py-3.5 text-[#1D1E18]">{biz.area || 'Not available'}</td>
-                        <td className="px-4 py-3.5 text-[#1D1E18]">{biz.city || 'Not available'}</td>
-                        <td className="px-4 py-3.5">
-                          <span className="text-[#68736B] bg-[#F6F8F5] px-2 py-0.5 rounded-[6px] border border-[#DDE5DE] text-[11px]">
+                        <td className="px-4 py-3.5 text-[#1D1E18] truncate whitespace-nowrap" title={biz.area || 'Not available'}>
+                          {biz.area || 'Not available'}
+                        </td>
+                        <td className="px-4 py-3.5 text-[#1D1E18] truncate whitespace-nowrap" title={biz.city || 'Not available'}>
+                          {biz.city || 'Not available'}
+                        </td>
+                        <td className="px-4 py-3.5 truncate whitespace-nowrap" title={biz.primary_category || 'Not available'}>
+                          <span className="inline-block max-w-full truncate text-[#68736B] bg-[#F6F8F5] px-2 py-0.5 rounded-[6px] border border-[#DDE5DE] text-[11px]">
                             {biz.primary_category || 'Not available'}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-[#B7791F] font-semibold">
+                        <td className="px-4 py-3.5 text-[#B7791F] font-semibold whitespace-nowrap">
                           {biz.rating ? (
                             <span className="inline-flex items-center gap-1">
-                              <Star className="w-3.5 h-3.5 fill-[#B7791F] text-[#B7791F]" />
-                              {biz.rating}
+                              <Star className="w-3.5 h-3.5 fill-[#B7791F] text-[#B7791F] shrink-0" />
+                              <span>{biz.rating}</span>
                             </span>
                           ) : (
                             <span className="text-[#68736B]">Not available</span>
                           )}
                         </td>
-                        <td className="px-4 py-3.5 text-[#68736B]">
-                          {biz.review_count ? `${biz.review_count}` : 'Not available'}
+                        <td className="px-4 py-3.5 text-[#68736B] whitespace-nowrap">
+                          {biz.review_count != null && biz.review_count !== '' ? `${biz.review_count}` : 'Not available'}
                         </td>
-                        <td className="px-4 py-3.5 text-[#1D1E18] font-mono text-[11px]">{biz.phone || 'Not available'}</td>
-                        <td className="px-4 py-3.5 text-right">
+                        <td className="px-4 py-3.5 text-[#1D1E18] font-mono text-[11px] truncate whitespace-nowrap" title={biz.phone || 'Not available'}>
+                          {biz.phone || 'Not available'}
+                        </td>
+                        <td className="px-4 py-3.5 text-right whitespace-nowrap">
                           <button
                             onClick={() => setSelectedBusiness(biz)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border border-[#DDE5DE] transition-colors shadow-2xs text-xs font-medium"
                           >
-                            <Info className="w-3.5 h-3.5 text-[#6B8F71]" />
-                            Details
+                            <Info className="w-3.5 h-3.5 text-[#6B8F71] shrink-0" />
+                            <span>Details</span>
                           </button>
                         </td>
                       </tr>
@@ -682,8 +699,8 @@ export const GoogleBusinessView: React.FC = () => {
       </div>
 
       {/* 4. LOCATIONS ACTION CONTROLS AREA */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-[12px] border border-[#DDE5DE] shadow-sm">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 bg-white p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] shadow-sm">
+        <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2 sm:gap-3">
           <div className="text-sm font-heading font-semibold text-[#1D1E18]">
             Saved Locations ({locations.length})
           </div>
@@ -696,11 +713,11 @@ export const GoogleBusinessView: React.FC = () => {
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           <button
             onClick={handleSync}
             disabled={syncing || loading}
-            className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold transition-all shadow-sm ${
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold transition-all shadow-sm ${
               syncing || loading 
                 ? 'bg-[#68736B]/40 text-white cursor-not-allowed' 
                 : 'bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white'
@@ -713,7 +730,7 @@ export const GoogleBusinessView: React.FC = () => {
           <button
             onClick={handleExportCsv}
             disabled={exporting || loading || locations.length === 0}
-            className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold border transition-all ${
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold border transition-all ${
               exporting || loading || locations.length === 0
                 ? 'bg-[#F6F8F5] border-[#DDE5DE] text-[#68736B]/50 cursor-not-allowed'
                 : 'bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border-[#DDE5DE] shadow-2xs'
@@ -730,14 +747,14 @@ export const GoogleBusinessView: React.FC = () => {
       </div>
 
       {/* 5. EXISTING LOCATIONS DATA TABLE */}
-      <div className="bg-white rounded-[16px] overflow-hidden border border-[#DDE5DE] shadow-sm p-6 space-y-4">
+      <div className="bg-white rounded-[16px] overflow-hidden border border-[#DDE5DE] shadow-sm p-4 sm:p-6 space-y-4">
         {loading ? (
-          <div className="p-12 text-center text-[#68736B] space-y-3">
+          <div className="p-8 sm:p-12 text-center text-[#68736B] space-y-3">
             <Loader2 className="w-8 h-8 animate-spin text-[#6B8F71] mx-auto" />
             <p className="text-sm font-heading font-medium text-[#1D1E18]">Loading Google Business Profile locations...</p>
           </div>
         ) : locations.length === 0 ? (
-          <div className="p-12 text-center space-y-2">
+          <div className="p-8 sm:p-12 text-center space-y-2">
             <Building2 className="w-12 h-12 text-[#68736B]/40 mx-auto stroke-1" />
             <h4 className="text-base font-heading font-semibold text-[#1D1E18]">No Google Business Profile locations found</h4>
             <p className="text-[#68736B] text-sm">
@@ -746,14 +763,14 @@ export const GoogleBusinessView: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="overflow-x-auto rounded-[12px] border border-[#DDE5DE]">
-              <table className="w-full text-left text-xs sm:text-sm text-[#1D1E18]">
+            <div className="table-responsive rounded-[12px] border border-[#DDE5DE]">
+              <table className="w-full min-w-[420px] text-left text-xs sm:text-sm text-[#1D1E18]">
                 <thead className="bg-[#F6F8F5] text-xs uppercase tracking-wider text-[#68736B] border-b border-[#DDE5DE] font-heading font-bold">
                   <tr>
-                    <th scope="col" className="px-6 py-3.5 font-heading font-bold text-[#1D1E18]">BUSINESS NAME</th>
-                    <th scope="col" className="px-6 py-3.5 font-heading font-bold text-[#1D1E18]">AREA</th>
-                    <th scope="col" className="px-6 py-3.5 font-heading font-bold text-[#1D1E18]">CITY</th>
-                    <th scope="col" className="px-6 py-3.5 font-heading font-bold text-[#1D1E18] text-right">ACTION</th>
+                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18]">BUSINESS NAME</th>
+                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18]">AREA</th>
+                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18]">CITY</th>
+                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18] text-right">ACTION</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#DDE5DE] bg-white">
@@ -762,16 +779,16 @@ export const GoogleBusinessView: React.FC = () => {
                       key={loc.id}
                       className="hover:bg-[#F6F8F5]/60 transition-colors"
                     >
-                      <td className="px-6 py-4 font-bold text-[#1D1E18]">
+                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 font-bold text-[#1D1E18] break-words">
                         {loc.business_name}
                       </td>
-                      <td className="px-6 py-4 text-[#1D1E18]">
+                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 text-[#1D1E18]">
                         {loc.area || ''}
                       </td>
-                      <td className="px-6 py-4 text-[#1D1E18]">
+                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 text-[#1D1E18]">
                         {loc.city || ''}
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 text-right">
                         <button
                           onClick={() => handleDeleteLocation(loc.id, loc.business_name)}
                           disabled={deletingId === loc.id}
@@ -793,11 +810,11 @@ export const GoogleBusinessView: React.FC = () => {
 
             {/* PAGINATION CONTROLS */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-2 py-2 text-xs text-[#68736B]">
-                <div>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 py-2 text-xs text-[#68736B]">
+                <div className="text-center sm:text-left">
                   Showing {startIndex + 1} to {Math.min(startIndex + pageSize, totalItems)} of {totalItems} results
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
                   <button
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
@@ -844,8 +861,8 @@ export const GoogleBusinessView: React.FC = () => {
 
       {/* ADD LOCATION MODAL (20px radius) */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-[#1D1E18]/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-md p-6 space-y-4 shadow-2xl animate-fadeIn">
+        <div className="fixed inset-0 z-50 bg-[#1D1E18]/40 backdrop-blur-xs flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="modal-safe bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-md p-4 sm:p-6 space-y-4 shadow-2xl animate-fadeIn my-4 sm:my-auto">
             <div className="flex items-center justify-between border-b border-[#DDE5DE] pb-3">
               <h3 className="text-base font-heading font-bold text-[#1D1E18] flex items-center gap-2">
                 <PlusCircle className="w-5 h-5 text-[#6B8F71]" />
@@ -872,7 +889,7 @@ export const GoogleBusinessView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-heading font-semibold text-[#1D1E18] mb-1">Area</label>
                   <input
@@ -928,9 +945,9 @@ export const GoogleBusinessView: React.FC = () => {
 
       {/* FULL 58-FIELD BUSINESS DETAILS MODAL (20px radius) */}
       {selectedBusiness && (
-        <div className="fixed inset-0 z-50 bg-[#1D1E18]/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 space-y-6 shadow-2xl my-8">
-            <div className="flex items-start justify-between border-b border-[#DDE5DE] pb-4">
+        <div className="fixed inset-0 z-50 bg-[#1D1E18]/50 backdrop-blur-xs flex items-start justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="modal-safe bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-4xl p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 shadow-2xl my-4 sm:my-8">
+            <div className="flex items-start justify-between border-b border-[#DDE5DE] pb-4 gap-3">
               <div>
                 <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#6B8F71] uppercase tracking-wider mb-1">
                   <span>{selectedBusiness.source_type || 'Google Business'}</span>
@@ -940,7 +957,7 @@ export const GoogleBusinessView: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <h2 className="text-2xl font-heading font-bold text-[#1D1E18] tracking-tight">
+                <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold text-[#1D1E18] tracking-tight break-words">
                   {selectedBusiness.business_name}
                 </h2>
                 {selectedBusiness.alternate_name && (
@@ -949,19 +966,19 @@ export const GoogleBusinessView: React.FC = () => {
               </div>
               <button
                 onClick={() => setSelectedBusiness(null)}
-                className="p-2 text-[#68736B] hover:text-[#1D1E18] rounded-[8px] bg-[#F6F8F5] hover:bg-[#DDE5DE]/50 transition-colors"
+                className="p-2 text-[#68736B] hover:text-[#1D1E18] rounded-[8px] bg-[#F6F8F5] hover:bg-[#DDE5DE]/50 transition-colors shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Core Info Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE]">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
                 <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Category</div>
                 <div className="text-sm font-semibold text-[#1D1E18]">{selectedBusiness.primary_category || 'N/A'}</div>
               </div>
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE]">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
                 <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Rating & Reviews</div>
                 <div className="text-sm font-semibold text-[#B7791F] flex items-center gap-1.5">
                   {selectedBusiness.rating ? (
@@ -975,11 +992,11 @@ export const GoogleBusinessView: React.FC = () => {
                   )}
                 </div>
               </div>
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE]">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
                 <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Primary Phone</div>
                 <div className="text-sm font-semibold text-[#1D1E18] font-mono">{selectedBusiness.phone || 'N/A'}</div>
               </div>
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE]">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
                 <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Landline Phone</div>
                 <div className="text-sm font-semibold text-[#6B8F71] font-mono">{selectedBusiness.phone_landline || 'N/A'}</div>
               </div>
@@ -987,7 +1004,7 @@ export const GoogleBusinessView: React.FC = () => {
 
             {/* About & Description */}
             {(selectedBusiness.about_us || selectedBusiness.description) && (
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE] space-y-1.5">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-1.5">
                 <div className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-1.5">
                   <Info className="w-3.5 h-3.5" />
                   About / Description
@@ -1004,13 +1021,13 @@ export const GoogleBusinessView: React.FC = () => {
                 <MapPin className="w-3.5 h-3.5 text-[#6B8F71]" />
                 Address & Geographic Coordinates
               </h4>
-              <div className="bg-[#F6F8F5] p-4 rounded-[12px] border border-[#DDE5DE] space-y-3">
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-3">
                 <div>
                   <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Full Address</div>
-                  <div className="text-sm font-medium text-[#1D1E18]">{selectedBusiness.address || 'N/A'}</div>
+                  <div className="text-sm font-medium text-[#1D1E18] break-words">{selectedBusiness.address || 'N/A'}</div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2 border-t border-[#DDE5DE]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs pt-2 border-t border-[#DDE5DE]">
                   <div>
                     <span className="text-[#68736B] block text-[10px] uppercase font-bold">Area / Locality</span>
                     <span className="text-[#1D1E18] font-semibold">{selectedBusiness.area || 'N/A'}</span>
@@ -1030,7 +1047,7 @@ export const GoogleBusinessView: React.FC = () => {
                 </div>
 
                 {(selectedBusiness.latitude || selectedBusiness.longitude) && (
-                  <div className="flex items-center gap-4 text-xs pt-2 border-t border-[#DDE5DE] font-mono text-[#68736B]">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs pt-2 border-t border-[#DDE5DE] font-mono text-[#68736B]">
                     <span>Latitude: {selectedBusiness.latitude || 'N/A'}</span>
                     <span>Longitude: {selectedBusiness.longitude || 'N/A'}</span>
                   </div>

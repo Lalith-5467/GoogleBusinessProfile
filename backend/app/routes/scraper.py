@@ -1,6 +1,9 @@
+import logging
 from typing import List
 from fastapi import APIRouter, Depends, Response, HTTPException, Path
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("google-business-backend")
 
 from app.database import get_db
 from app.services.web_scraper import WebScraperService
@@ -44,9 +47,23 @@ async def scrape_single_company(payload: CompanyScrapeRequest, db: Session = Dep
             total_count=res["total_count"]
         )
     except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+        err_msg = str(ve)
+        if "scraping browser is not installed" in err_msg or "Executable doesn't exist" in err_msg:
+            logger.error(f"Playwright browser missing during company scrape: {ve}")
+            raise HTTPException(
+                status_code=503,
+                detail="Website scraping is temporarily unavailable because the scraping browser is not installed."
+            )
+        raise HTTPException(status_code=400, detail=err_msg)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Website could not be scraped. Reason: {str(e)}")
+        err_str = str(e)
+        logger.error(f"Website scrape error: {e}", exc_info=True)
+        if "Executable doesn't exist" in err_str or "scraping browser is not installed" in err_str or "playwright install" in err_str:
+            raise HTTPException(
+                status_code=503,
+                detail="Website scraping is temporarily unavailable because the scraping browser is not installed."
+            )
+        raise HTTPException(status_code=502, detail=f"Website could not be scraped. Reason: {err_str}")
 
 
 @router.post("/search", response_model=KeywordSearchResponse)
@@ -76,9 +93,23 @@ async def search_businesses_keyword_location(payload: KeywordSearchRequest, db: 
             businesses=biz_models
         )
     except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+        err_msg = str(ve)
+        if "scraping browser is not installed" in err_msg or "Executable doesn't exist" in err_msg:
+            logger.error(f"Playwright browser missing during business search: {ve}")
+            raise HTTPException(
+                status_code=503,
+                detail="Website scraping is temporarily unavailable because the scraping browser is not installed."
+            )
+        raise HTTPException(status_code=400, detail=err_msg)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Business search failed. Reason: {str(e)}")
+        err_str = str(e)
+        logger.error(f"Business search error: {e}", exc_info=True)
+        if "Executable doesn't exist" in err_str or "scraping browser is not installed" in err_str or "playwright install" in err_str:
+            raise HTTPException(
+                status_code=503,
+                detail="Website scraping is temporarily unavailable because the scraping browser is not installed."
+            )
+        raise HTTPException(status_code=502, detail=f"Business search failed. Reason: {err_str}")
 
 
 @router.post("/bulk", response_model=BulkScrapeResponse)
@@ -90,18 +121,36 @@ async def bulk_scrape_companies(payload: BulkScrapeRequest, db: Session = Depend
     if not payload.urls or len(payload.urls) == 0:
         raise HTTPException(status_code=400, detail="Please submit at least one public website URL.")
 
-    result = await WebScraperService.scrape_bulk_websites(urls=payload.urls, db=db)
+    try:
+        result = await WebScraperService.scrape_bulk_websites(urls=payload.urls, db=db)
+        results_responses = [ScrapedBusinessResponse.model_validate(b) for b in result["results"]]
 
-    results_responses = [ScrapedBusinessResponse.model_validate(b) for b in result["results"]]
-
-    return BulkScrapeResponse(
-        success=True,
-        total_urls=result["total_urls"],
-        successfully_scraped=result["successfully_scraped"],
-        failed=result["failed"],
-        total_businesses=result["total_businesses"],
-        results=results_responses
-    )
+        return BulkScrapeResponse(
+            success=True,
+            total_urls=result["total_urls"],
+            successfully_scraped=result["successfully_scraped"],
+            failed=result["failed"],
+            total_businesses=result["total_businesses"],
+            results=results_responses
+        )
+    except ValueError as ve:
+        err_msg = str(ve)
+        if "scraping browser is not installed" in err_msg or "Executable doesn't exist" in err_msg:
+            logger.error(f"Playwright browser missing during bulk scrape: {ve}")
+            raise HTTPException(
+                status_code=503,
+                detail="Website scraping is temporarily unavailable because the scraping browser is not installed."
+            )
+        raise HTTPException(status_code=400, detail=err_msg)
+    except Exception as e:
+        err_str = str(e)
+        logger.error(f"Bulk scrape error: {e}", exc_info=True)
+        if "Executable doesn't exist" in err_str or "scraping browser is not installed" in err_str or "playwright install" in err_str:
+            raise HTTPException(
+                status_code=503,
+                detail="Website scraping is temporarily unavailable because the scraping browser is not installed."
+            )
+        raise HTTPException(status_code=502, detail=f"Bulk scraping operation failed. Reason: {err_str}")
 
 @router.get("/businesses", response_model=ScrapedBusinessListResponse)
 def list_scraped_businesses(db: Session = Depends(get_db)):

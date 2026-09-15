@@ -1,6 +1,10 @@
+import logging
+import urllib.parse
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("google-business-backend")
 
 from app.database import get_db
 from app.config import settings
@@ -16,6 +20,7 @@ def get_google_auth_url():
         url = GoogleBusinessService.get_auth_url()
         return {"url": url, "configured": True}
     except HTTPException as e:
+        logger.warning(f"Google OAuth not configured: {e.detail}")
         return {"url": None, "configured": False, "message": e.detail}
 
 @router.get("/callback")
@@ -27,7 +32,9 @@ def google_auth_callback(code: str = Query(...), db: Session = Depends(get_db)):
         redirect_target = f"{settings.FRONTEND_URL}?auth=success"
         return RedirectResponse(url=redirect_target)
     except Exception as e:
-        redirect_target = f"{settings.FRONTEND_URL}?auth=error&error={str(e)}"
+        logger.error(f"Google OAuth callback error: {e}", exc_info=True)
+        safe_msg = urllib.parse.quote("Authentication failed. Please verify your Google OAuth credentials and redirect URI.")
+        redirect_target = f"{settings.FRONTEND_URL}?auth=error&error={safe_msg}"
         return RedirectResponse(url=redirect_target)
 
 @router.post("/disconnect")

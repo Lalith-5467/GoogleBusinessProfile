@@ -4,13 +4,7 @@ from app.config import settings
 
 def setup_cors(app: FastAPI) -> None:
     """Configure CORS origins and middleware for the FastAPI application."""
-    origins = [
-        settings.FRONTEND_URL,
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ]
+    origins = settings.get_cors_origins()
 
     app.add_middleware(
         CORSMiddleware,

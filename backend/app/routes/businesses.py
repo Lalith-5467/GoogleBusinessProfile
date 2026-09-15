@@ -1,7 +1,10 @@
 import datetime
+import logging
 from typing import List
 from fastapi import APIRouter, Depends, Response, HTTPException, Path
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("google-business-backend")
 
 from app.database import get_db
 from app.services.google_business import GoogleBusinessService
@@ -34,7 +37,7 @@ def get_account_status(db: Session = Depends(get_db)):
             connection_status="DISCONNECTED",
             total_locations=total_locations,
             auth_url_available=is_configured,
-            message="No Google Business Profile account connected." if is_configured else "Google OAuth credentials (GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET) are not configured in .env."
+            message="No Google Business Profile account connected." if is_configured else "Google OAuth credentials (GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET) are not configured on the server."
         )
         
     return AccountStatusResponse(
@@ -164,17 +167,26 @@ def bulk_scrape_businesses(payload: BulkScrapeRequest, db: Session = Depends(get
 @router.post("/sync", response_model=SyncResponse)
 def sync_businesses(db: Session = Depends(get_db)):
     """Triggers location synchronization with official Google Business Profile API and upserts into MySQL."""
-    locations = GoogleBusinessService.sync_locations(db=db)
-    loc_responses = [LocationResponse.model_validate(loc) for loc in locations]
-    total_count = db.query(GoogleBusinessLocation).count()
-    
-    return SyncResponse(
-        success=True,
-        message="Business locations synchronized successfully with Google Business Profile API.",
-        synced_count=len(loc_responses),
-        total_count=total_count,
-        locations=loc_responses
-    )
+    try:
+        locations = GoogleBusinessService.sync_locations(db=db)
+        loc_responses = [LocationResponse.model_validate(loc) for loc in locations]
+        total_count = db.query(GoogleBusinessLocation).count()
+        
+        return SyncResponse(
+            success=True,
+            message="Business locations synchronized successfully with Google Business Profile API.",
+            synced_count=len(loc_responses),
+            total_count=total_count,
+            locations=loc_responses
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Google Business Profile sync error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to synchronize business locations from Google API. Please ensure Google My Business APIs are enabled in your Google Cloud project."
+        )
 
 @router.get("/export")
 def export_businesses_csv(db: Session = Depends(get_db)):
