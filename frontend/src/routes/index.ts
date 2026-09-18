@@ -5,4 +5,5 @@ export const ROUTES = {
   HOME: '/',
   GOOGLE_BUSINESS: '/google-business',
   SCRAPER: '/scraper',
+  ADMIN: '/admin',
 } as const;

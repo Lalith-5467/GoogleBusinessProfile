@@ -9,8 +9,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import engine, Base
-from app.routes import auth_router, business_router, scraper_router
+from app.database import engine, Base, SessionLocal
+from app.routes import auth_router, business_router, scraper_router, admin_router
+from app.services.auth import seed_default_plans_if_empty, bootstrap_super_admin, is_super_admin_exists
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -78,13 +79,50 @@ try:
             except Exception:
                 pass
 
+        # Non-destructive column migrations for google_business_locations
+        location_cols = [
+            "primary_category VARCHAR(255) NULL",
+            "rating VARCHAR(50) NULL",
+            "review_count VARCHAR(50) NULL",
+            "phone VARCHAR(100) NULL",
+            "website TEXT NULL",
+            "state VARCHAR(255) NULL",
+            "postal_code VARCHAR(100) NULL",
+            "latitude VARCHAR(100) NULL",
+            "longitude VARCHAR(100) NULL"
+        ]
+        for col_def in location_cols:
+            col_name = col_def.split()[0]
+            try:
+                conn.execute(text(f"ALTER TABLE google_business_locations ADD COLUMN {col_def}"))
+                conn.commit()
+                logger.info(f"Added column '{col_name}' to google_business_locations table.")
+            except Exception:
+                pass
+
     logger.info("Database tables initialized successfully.")
+    
+    # Initialize default subscription plans & optional env super admin
+    try:
+        init_db = SessionLocal()
+        seed_default_plans_if_empty(init_db)
+        if settings.SUPER_ADMIN_EMAIL and settings.SUPER_ADMIN_PASSWORD and not is_super_admin_exists(init_db):
+            bootstrap_super_admin(
+                db=init_db,
+                email=settings.SUPER_ADMIN_EMAIL,
+                password=settings.SUPER_ADMIN_PASSWORD,
+                full_name="System Super Admin"
+            )
+        init_db.close()
+    except Exception as se:
+        logger.warning(f"Note on startup seeding: {se}")
+
 except Exception as e:
     logger.error(f"Failed to initialize database tables: {e}")
 
 app = FastAPI(
     title="Google Business Profile Backend API",
-    description="Python FastAPI backend service for managing Google Business Profiles, OAuth authentication, sync, and CSV exports.",
+    description="Python FastAPI backend service for managing Google Business Profiles, OAuth authentication, sync, CSV exports, and Super Admin panel.",
     version="1.0.0"
 )
 
@@ -103,6 +141,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(business_router)
 app.include_router(scraper_router)
+app.include_router(admin_router)
 
 @app.get("/api/health", tags=["Health"])
 def health_check():

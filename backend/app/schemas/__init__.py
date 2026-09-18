@@ -19,6 +19,33 @@ from app.schemas.scraper import (
     ScraperDeleteResponse
 )
 
+from app.schemas.admin import (
+    AdminLoginRequest,
+    BootstrapSuperAdminRequest,
+    ChangePasswordRequest,
+    PermissionSchema,
+    UserProfileResponse,
+    TokenResponse,
+    CreateUserRequest,
+    UpdateUserRequest,
+    UpdateUserStatusRequest,
+    UpdatePermissionsRequest,
+    UserListItem,
+    UserListResponse,
+    SubscriptionPlanSchema,
+    UpdatePlanRequest,
+    DashboardStatsResponse,
+    AnalyticsResponse,
+    AuditLogItem,
+    AuditLogsResponse,
+    ExportLogItem,
+    ExportLogsResponse,
+    ScrapingJobItem,
+    ScrapingJobsResponse,
+    UnifiedBusinessItem,
+    UnifiedBusinessListResponse
+)
+
 __all__ = [
     "AccountStatusResponse",
     "LocationResponse",
@@ -34,5 +61,29 @@ __all__ = [
     "BulkScrapeResponse",
     "ScrapedBusinessListResponse",
     "ScraperCountResponse",
-    "ScraperDeleteResponse"
+    "ScraperDeleteResponse",
+    "AdminLoginRequest",
+    "BootstrapSuperAdminRequest",
+    "ChangePasswordRequest",
+    "PermissionSchema",
+    "UserProfileResponse",
+    "TokenResponse",
+    "CreateUserRequest",
+    "UpdateUserRequest",
+    "UpdateUserStatusRequest",
+    "UpdatePermissionsRequest",
+    "UserListItem",
+    "UserListResponse",
+    "SubscriptionPlanSchema",
+    "UpdatePlanRequest",
+    "DashboardStatsResponse",
+    "AnalyticsResponse",
+    "AuditLogItem",
+    "AuditLogsResponse",
+    "ExportLogItem",
+    "ExportLogsResponse",
+    "ScrapingJobItem",
+    "ScrapingJobsResponse",
+    "UnifiedBusinessItem",
+    "UnifiedBusinessListResponse"
 ]

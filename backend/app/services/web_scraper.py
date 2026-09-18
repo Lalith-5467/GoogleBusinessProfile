@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from fastapi import HTTPException
 
+from app.config import settings
 from app.models.scraped_business import ScrapedBusiness
+from app.services.google_places import GooglePlacesService
+from app.utils.helpers import (
+    clean_address_text,
+    resolve_location,
+    extract_place_id,
+    extract_pin_code,
+    CITY_STATE_MAP,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -184,8 +193,8 @@ class WebScraperService:
     @staticmethod
     async def search_keyword_location(keyword: str, location: Optional[str], db: Session, max_count: Optional[int] = 50) -> Dict[str, Any]:
         """
-        Searches Google Maps for business keyword + location (e.g. KFC + Chennai),
-        extracts all matching places up to max_count, normalizes fields, saves to MySQL, and returns list.
+        Searches for business keyword + location (e.g. KFC + Chennai) using Google Places API (if configured)
+        or live Google Maps place extraction, normalizes fields, saves to MySQL `scraped_businesses`, and returns list.
         """
         clean_kw = keyword.strip()
         clean_loc = (location or "").strip()
@@ -193,17 +202,25 @@ class WebScraperService:
         if not clean_kw:
             raise ValueError("Please provide a valid business keyword or name.")
 
-        query_str = f"{clean_kw} in {clean_loc}" if clean_loc else clean_kw
-        target_url = f"https://www.google.com/maps/search/{urllib.parse.quote(query_str)}"
+        limit = max_count if (max_count and max_count > 0) else 50
 
-        extracted_list = await WebScraperService._extract_google_maps_search(
-            target_url=target_url,
-            search_keyword=clean_kw,
-            search_area=clean_loc
-        )
+        if GooglePlacesService.is_configured():
+            logger.info(f"Using Google Places API to search for '{clean_kw}' in '{clean_loc}'...")
+            extracted_list = await GooglePlacesService.search_places(
+                keyword=clean_kw,
+                location=clean_loc,
+                max_count=limit
+            )
+        else:
+            query_str = f"{clean_kw} in {clean_loc}" if clean_loc else clean_kw
+            target_url = f"https://www.google.com/maps/search/{urllib.parse.quote(query_str)}"
 
-        if max_count and max_count > 0:
-            extracted_list = extracted_list[:max_count]
+            extracted_list = await WebScraperService._extract_google_maps_search(
+                target_url=target_url,
+                search_keyword=clean_kw,
+                search_area=clean_loc
+            )
+            extracted_list = extracted_list[:limit]
 
         records: List[ScrapedBusiness] = []
         for item in extracted_list:
@@ -387,6 +404,11 @@ class WebScraperService:
                         let plusCode = '';
                         let openStatus = '';
                         let addressParts = [];
+                        let phoneNum = '';
+                        let dineIn = '';
+                        let delivery = '';
+                        let pickup = '';
+                        let blurb = '';
 
                         for (const line of w4Lines) {
                             const parts = line.split(/[·•⋅|\n]/).map(p => p.replace(/[^\x20-\x7E]/g, '').trim());
@@ -405,6 +427,14 @@ class WebScraperService:
                                     continue;
                                 }
 
+                                // Check service options (Dine-in, Takeaway, Delivery)
+                                if (/\b(dine[- ]?in)\b/i.test(part)) dineIn = 'Yes';
+                                if (/\b(delivery|no[- ]contact delivery)\b/i.test(part)) delivery = 'Yes';
+                                if (/\b(takeaway|takeout|pickup)\b/i.test(part)) pickup = 'Yes';
+                                if (/\b(dine[- ]?in|takeaway|takeout|pickup|delivery|no[- ]contact delivery)\b/i.test(part)) {
+                                    continue;
+                                }
+
                                 // Check Plus Code e.g. "QHC2+PCV"
                                 const plusMatch = part.match(/([A-Z0-9]{4}\+[A-Z0-9]{2,3})/);
                                 if (plusMatch) {
@@ -420,9 +450,14 @@ class WebScraperService:
                                     continue;
                                 }
 
-                                // Check Open/Closed status
-                                if (/^(Open|Closed|Closes|Opens|24 hours)/i.test(part) || part.includes('Closes') || part.includes('Opens')) {
-                                    if (!openStatus) openStatus = part;
+                                // Check Open/Closed status — also catches inline concat like "RdOpen"
+                                const openSuffix = part.match(/(Open|Closed|Closes\s+\S+|Opens\s+\S+|24\s+hours)/i);
+                                if (openSuffix) {
+                                    if (!openStatus) openStatus = openSuffix[0];
+                                    const beforeOpen = part.slice(0, openSuffix.index).trim().replace(/[,\s]+$/, '').trim();
+                                    if (beforeOpen && beforeOpen.length > 1) {
+                                        addressParts.push(beforeOpen);
+                                    }
                                     continue;
                                 }
 
@@ -430,23 +465,90 @@ class WebScraperService:
                                     continue;
                                 }
 
-                                const isAddressWord = /\b(st|street|rd|road|lane|ln|drive|drv|highway|hwy|bus stop)\b/i.test(part);
+                                // Skip phone numbers — they must never enter addressParts
+                                if (/^\+?\d[\d\s\-]{6,}$/.test(part.trim())) {
+                                    if (!phoneNum) phoneNum = part.trim();
+                                    continue;
+                                }
+                                const embeddedPhone = part.match(/(\+?\d[\d\s\-]{7,15})/);
+                                if (embeddedPhone) {
+                                    if (!phoneNum) phoneNum = embeddedPhone[1].trim();
+                                    const withoutPhone = part.replace(embeddedPhone[0], '').replace(/^[,\s]+|[,\s]+$/g, '').trim();
+                                    if (withoutPhone && withoutPhone.length > 1) {
+                                        addressParts.push(withoutPhone);
+                                    }
+                                    continue;
+                                }
+
+                                // Check editorial blurb or quotes (e.g. "Modest restaurant for Pan-Asian fare")
+                                if (/^["'].*["']$/.test(part) || /\b(casual|cozy|good for kids|romantic|family-friendly)\b/i.test(part) || (part.length > 20 && /\b(fare|cuisine|dishes|eatery|spot for|place for)\b/i.test(part))) {
+                                    if (!blurb) blurb = part.replace(/^["']|["']$/g, '').trim();
+                                    continue;
+                                }
+
+                                // Check category keywords — avoid appending secondary categories to address
+                                const isCategoryWord = /\b(restaurant|fare|cafe|bakery|bar|hotel|hospital|clinic|store|shop|showroom|market|mall|center|centre|theatre|theater|service|services|salon|spa|college|school|university|bank|atm|agency|station)\b/i.test(part);
+                                const isAddressWord = /\b(st|street|rd|road|lane|ln|ave|avenue|salai|marg|nagar|colony|layout|cross|main|drive|drv|highway|hwy|bus stop|bypass|floor|block|plot|door|flat|opp|near|behind|beside)\b/i.test(part);
+
                                 if (!category && !/\d/.test(part) && !part.includes(',') && !isAddressWord) {
                                     category = part;
+                                } else if (isCategoryWord && !/\d/.test(part) && !isAddressWord) {
+                                    continue;
                                 } else {
                                     addressParts.push(part);
                                 }
                             }
                         }
 
-                        const fullText = addressParts.join(', ');
-                        let phoneNum = '';
-                        const phoneMatch = fullText.match(/(\+?\d[\d\s\-]{7,15})/);
-                        if (phoneMatch) {
-                            phoneNum = phoneMatch[1].trim();
+                        let website = '';
+                        const webEl = el.querySelector('a[data-item-id="authority"], a[data-value="Open website"], a[data-value="Website"], a[aria-label*="website" i], a[aria-label*="Website"], a.lcr4fd[href]');
+                        if (webEl) {
+                            const rawWeb = webEl.href || webEl.getAttribute('href') || '';
+                            if (rawWeb && !rawWeb.startsWith('javascript:') && !rawWeb.includes('google.com/maps')) {
+                                website = rawWeb;
+                            }
                         }
 
-                        return { name, href, rating, reviews, category, plusCode, openStatus, fullText, phoneNum };
+                        const phoneCandidates = [];
+                        const telEl = el.querySelector('a[href^="tel:"]');
+                        if (telEl) {
+                            const m = (telEl.getAttribute('href') || '').replace(/^tel:/, '').trim();
+                            if (m) {
+                                phoneCandidates.push(m);
+                                if (!phoneNum) phoneNum = m;
+                            }
+                        }
+                        const callBtn = el.querySelector('button[aria-label*="Call" i], a[aria-label*="Call" i]');
+                        if (callBtn) {
+                            const aria = callBtn.getAttribute('aria-label') || '';
+                            const m = aria.match(/(\+?\d[\d\s\-]{7,15})/);
+                            if (m) {
+                                phoneCandidates.push(m[1].trim());
+                                if (!phoneNum) phoneNum = m[1].trim();
+                            }
+                        }
+
+                        // Deduplicate addressParts (preserve order, case-insensitive)
+                        const seenParts = new Set();
+                        const dedupedParts = [];
+                        for (const ap of addressParts) {
+                            const key = ap.trim().toLowerCase();
+                            if (key && !seenParts.has(key)) {
+                                seenParts.add(key);
+                                dedupedParts.push(ap.trim());
+                            }
+                        }
+
+                        const fullText = dedupedParts.join(', ');
+                        if (!phoneNum) {
+                            const phoneMatch = fullText.match(/(\+?\d[\d\s\-]{7,15})/);
+                            if (phoneMatch) {
+                                phoneNum = phoneMatch[1].trim();
+                                phoneCandidates.push(phoneNum);
+                            }
+                        }
+
+                        return { name, href, rating, reviews, category, plusCode, openStatus, fullText, phoneNum, phoneCandidates, website, dineIn, delivery, pickup, blurb };
                     }).filter(c => c.name && c.name.length > 1);
                 }''')
 
@@ -456,20 +558,28 @@ class WebScraperService:
                     if not b_name or b_name.lower() in ["google maps", "results", "search", "directions", "overview"]:
                         continue
 
-                    # Filter out search queries stored as name
                     if b_name.lower().startswith("google.com maps search") or b_name.lower().startswith("https://"):
                         continue
 
-                    full_text = card.get("fullText", "")
+                    full_text_raw = card.get("fullText", "")
                     card_link = card.get("href", "") or target_url
+
+                    logger.debug("[ADDRESS RAW] business=%s | fullText=%s", b_name, full_text_raw)
+
+                    # Normalize: strip phones, open/close status, deduplicate from the raw full_text
+                    full_text = WebScraperService._normalize_address_text(full_text_raw)
+
+                    logger.debug("[ADDRESS NORMALIZED] business=%s | address=%s", b_name, full_text)
 
                     # Parse coordinates from place link if available
                     lat, lng = WebScraperService._extract_coordinates_from_url(card_link)
-                    area, city, state, pin, plus_c = WebScraperService._parse_structured_address(
+                    area, city, state, pin, plus_c, district, country = WebScraperService._parse_structured_address(
                         full_text=full_text,
                         search_location=search_area,
                         category_hint=card.get("category")
                     )
+
+                    logger.debug("[ADDRESS PARSED] business=%s | area=%s | city=%s | state=%s | pin=%s", b_name, area, city, state, pin)
 
                     plus_code = card.get("plusCode") or plus_c
 
@@ -479,12 +589,23 @@ class WebScraperService:
                         continue
                     seen_keys.add(dedup_key)
 
-                    phone_candidates = [card.get("phoneNum")] if card.get("phoneNum") else []
-                    if full_text:
-                        matches = re.findall(r'(\+?\d[\d\s\-]{7,15})', full_text)
-                        phone_candidates.extend(matches)
+                    card_phones = list(card.get("phoneCandidates") or [])
+                    if card.get("phoneNum") and card.get("phoneNum") not in card_phones:
+                        card_phones.append(card.get("phoneNum"))
+                    prim_phone, sec_phone, mob_phone, land_phone = WebScraperService._classify_phones(card_phones)
 
-                    prim_phone, mob_phone, land_phone = WebScraperService._classify_phones(phone_candidates)
+                    # Opening hours inference for 24 hours status
+                    c_status = card.get("openStatus", "") or ""
+                    mon_h = tue_h = wed_h = thu_h = fri_h = sat_h = sun_h = None
+                    gen_h = None
+                    if c_status and ("24 hours" in c_status.lower() or "open 24" in c_status.lower()):
+                        mon_h = tue_h = wed_h = thu_h = fri_h = sat_h = sun_h = "Open 24 hours"
+                        gen_h = "Monday to Sunday: Open 24 hours"
+
+                    clean_address = full_text[:400] if full_text else f"{b_name}, {city or search_area or ''}"
+                    place_id = extract_place_id(card_link)
+                    card_blurb = card.get("blurb")
+                    desc_val = card_blurb or f"{b_name} in {city or area or search_area or 'locality'}."
 
                     extracted_cards.append({
                         "source_url": card_link,
@@ -493,22 +614,38 @@ class WebScraperService:
                         "primary_category": (card.get("category") or search_keyword or "")[:250],
                         "rating": card.get("rating", "")[:50],
                         "review_count": card.get("reviews", "")[:50],
-                        "address": full_text[:400] if full_text else f"{b_name}, {city or search_area or ''}",
-                        "area": area[:250],
-                        "city": city[:250],
-                        "state": state[:250],
+                        "address": clean_address,
+                        "area": area[:250] if area else "",
+                        "city": city[:250] if city else "",
+                        "district": district[:250] if district else "",
+                        "state": state[:250] if state else "",
+                        "country": country[:100] if country else "India",
                         "postal_code": pin[:50],
                         "latitude": lat[:50],
                         "longitude": lng[:50],
                         "plus_code": plus_code[:100],
-                        "open_now": card.get("openStatus", "")[:50],
-                        "today_open_status": card.get("openStatus", "")[:50],
+                        "open_now": c_status[:50],
+                        "today_open_status": c_status[:50],
                         "phone": prim_phone,
+                        "secondary_phone": sec_phone,
                         "phone_landline": land_phone,
                         "phone_mobile": mob_phone,
-                        "description": f"{b_name} in {city or area or search_area or 'locality'}.",
-                        "about_us": f"{b_name} in {city or area or search_area or 'locality'}.",
-                        "services": "Google Maps Search Result",
+                        "website": card.get("website") or None,
+                        "monday_hours": mon_h,
+                        "tuesday_hours": tue_h,
+                        "wednesday_hours": wed_h,
+                        "thursday_hours": thu_h,
+                        "friday_hours": fri_h,
+                        "saturday_hours": sat_h,
+                        "sunday_hours": sun_h,
+                        "opening_hours": gen_h,
+                        "description": desc_val[:1000],
+                        "about_us": desc_val[:1000],
+                        "services": None,  # Not available from search cards — do not fake it
+                        "dine_in": card.get("dineIn") or None,
+                        "delivery": card.get("delivery") or None,
+                        "pickup": card.get("pickup") or None,
+                        "google_place_id": place_id,
                         "source_type": "GOOGLE_MAPS_SEARCH",
                         "search_keyword": search_keyword,
                         "search_area": search_area,
@@ -576,29 +713,151 @@ class WebScraperService:
                     await first_card.click()
                     await page.wait_for_timeout(3500)
 
-                data = await page.evaluate('''() => {
-                    const clean = (str) => str ? str.replace(/^[^\\w\\s\\+]+/, '').trim() : '';
+                # Try clicking the hours expander button so that weekly hours table renders in DOM
+                try:
+                    hours_expander = page.locator('[data-item-id="oh"], button[data-item-id="oh"], div[jsaction*="openhours"]').first
+                    if await hours_expander.count() > 0:
+                        await hours_expander.click(timeout=2000)
+                        await page.wait_for_timeout(600)
+                except Exception:
+                    pass
+
+                data = await page.evaluate(r'''() => {
+                    const clean = (str) => str ? str.replace(/^[^\w\s\+]+/, '').trim() : '';
 
                     const h1 = document.querySelector('h1.DUwfe, h1.fontTitleLarge, h1');
                     const catBtn = document.querySelector('button[data-item-id="category"], button.Dkftq, button.fontBodyMedium');
-                    const addrBtn = document.querySelector('button[data-item-id="address"], div.Io6YTe');
-                    const phoneBtn = document.querySelector('button[data-item-id*="phone"]');
-                    const webLink = document.querySelector('a[data-item-id="authority"]');
+
+                    // Address button - specific selectors, never match naked div.Io6YTe
+                    const addrEl = document.querySelector('button[data-item-id="address"], [data-item-id="address"], button[aria-label*="Address:"], button[aria-label*="Address"]') || document.querySelector('[data-tooltip*="Copy address"]');
+                    const addrText = addrEl ? (addrEl.querySelector('.Io6YTe, .fontBodyMedium') ? addrEl.querySelector('.Io6YTe, .fontBodyMedium').textContent : addrEl.textContent) : '';
+
+                    // Phone button
+                    const phoneEl = document.querySelector('button[data-item-id^="phone"], [data-item-id^="phone"], button[aria-label*="Phone:"], button[aria-label*="Phone"]') || document.querySelector('[data-tooltip*="Copy phone"]');
+                    const phoneText = phoneEl ? (phoneEl.querySelector('.Io6YTe, .fontBodyMedium') ? phoneEl.querySelector('.Io6YTe, .fontBodyMedium').textContent : phoneEl.textContent) : '';
+
+                    // Website link
+                    const webLink = document.querySelector('a[data-item-id="authority"], a[data-value="Open website"], a[data-value="Website"], a[aria-label*="Website:"], a[aria-label*="Website"], a[aria-label*="website" i], a.CsEnBe[href]') || document.querySelector('a[data-tooltip*="Open website"]');
+
+                    // Menu & reservation links
+                    const menuLink = document.querySelector('a[data-item-id="menu"], a[aria-label*="Menu"], [data-item-id="menu"] a');
+                    const resLink = document.querySelector('a[data-item-id="action:3"], a[aria-label*="Reserve"], a[aria-label*="Book table"]');
+
                     const ratingSpan = document.querySelector('div.F72Y0d span, span.ceA1da, span.mwA4fd');
                     const reviewsBtn = document.querySelector('button.HH2rfc, button[aria-label*="reviews"]');
-                    const aboutDiv = document.querySelector('div.PYvAId, div.w8fiHc, div[aria-label*="About"]');
+                    const aboutDiv = document.querySelector('div.PYvAId, div.w8fiHc, div[aria-label*="About"], div.fontBodyMedium[tabindex="-1"]');
                     const openStatusSpan = document.querySelector('span[style*="color: rgb(24, 128, 56)"], span[style*="color: rgb(217, 48, 37)"], div.m6QEdf span.fontBodyMedium');
+
+                    // Opening Hours
+                    const hoursBtn = document.querySelector('[data-item-id="oh"], button[data-item-id="oh"], div[aria-label*="hours"], button[aria-label*="hours"], div[jsaction*="openhours"]');
+                    let hoursRaw = '';
+                    if (hoursBtn) hoursRaw = hoursBtn.getAttribute('aria-label') || hoursBtn.textContent || '';
+
+                    const dayHours = {};
+                    const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+
+                    // 1. Check "Copy open hours" buttons which have exact format: "Day, Hours, Copy open hours"
+                    document.querySelectorAll('button[aria-label*="Copy open hours" i]').forEach(btn => {
+                        const aria = btn.getAttribute('aria-label') || '';
+                        const m = aria.match(/^(\w+),\s*(.*?),\s*Copy open hours/i);
+                        if (m) {
+                            const d = m[1].toLowerCase();
+                            const val = m[2].trim();
+                            if (DAYS.includes(d) && val && !dayHours[d]) {
+                                dayHours[d] = val;
+                            }
+                        }
+                    });
+
+                    // 2. Check table rows
+                    document.querySelectorAll('table.eK4R0e tr, table tr, div[aria-label*="Opens"] li, ul.LD2KFf li, li.G8aQO').forEach(row => {
+                        const txt = row.textContent.toLowerCase().trim();
+                        for (const day of DAYS) {
+                            if (txt.includes(day)) {
+                                const cells = row.querySelectorAll('td');
+                                if (cells.length >= 2) {
+                                    const val = cells[1].textContent.trim();
+                                    if (val && !dayHours[day]) {
+                                        dayHours[day] = val;
+                                        break;
+                                    }
+                                }
+                                const cleaned = row.textContent.trim().replace(new RegExp('^' + day + '[:,\s]*', 'i'), '').trim();
+                                if (cleaned && !dayHours[day]) {
+                                    dayHours[day] = cleaned;
+                                    break;
+                                }
+                            }
+                        }
+                    });
+
+                    // 3. Fallback from aria-label
+                    if (!Object.keys(dayHours).length && hoursRaw) {
+                        const parts = hoursRaw.split(/[;\n]+/);
+                        for (const part of parts) {
+                            for (const day of DAYS) {
+                                const re = new RegExp('^' + day, 'i');
+                                if (re.test(part.trim())) {
+                                    const val = part.trim().replace(/^\w+[:,\s]*/i, '').trim();
+                                    if (val && !dayHours[day]) dayHours[day] = val;
+                                }
+                            }
+                        }
+                    }
+
+                    // Service options (Dine-in, Takeaway, Delivery)
+                    let dineIn = '';
+                    let delivery = '';
+                    let pickup = '';
+                    const bodyText = document.body.innerText || '';
+                    if (/\b(dine[- ]?in)\b/i.test(bodyText)) {
+                        dineIn = /no dine[- ]?in/i.test(bodyText) ? 'No' : 'Yes';
+                    }
+                    if (/\b(delivery|no[- ]contact delivery)\b/i.test(bodyText)) {
+                        delivery = /no delivery/i.test(bodyText) ? 'No' : 'Yes';
+                    }
+                    if (/\b(takeout|takeaway|curbside pickup)\b/i.test(bodyText)) {
+                        pickup = /no takeout|no takeaway/i.test(bodyText) ? 'No' : 'Yes';
+                    }
+
+                    // Attributes: Services / Amenities / Accessibility / Payment
+                    const attrMap = { services: [], amenities: [], accessibility: [], payment_options: [] };
+                    document.querySelectorAll('[aria-label][data-item-id], div.ugiz4, div.LTs0Rc, span.iP2t7d').forEach(el => {
+                        const label = (el.getAttribute('aria-label') || el.textContent || '').trim();
+                        if (!label || label.length < 2) return;
+                        const ll = label.toLowerCase();
+                        if (/wifi|seating|outdoor|indoor|service/.test(ll)) {
+                            attrMap.services.push(label);
+                        } else if (/ameniti|facility|facil/.test(ll)) {
+                            attrMap.amenities.push(label);
+                        } else if (/access|wheelchair|elevator/.test(ll)) {
+                            attrMap.accessibility.push(label);
+                        } else if (/payment|card|cash|upi|gpay|paytm|nfc|contactless/.test(ll)) {
+                            attrMap.payment_options.push(label);
+                        }
+                    });
 
                     return {
                         name: h1 ? h1.textContent.trim() : '',
                         category: clean(catBtn ? catBtn.textContent : ''),
-                        address: clean(addrBtn ? addrBtn.textContent : ''),
-                        phone: clean(phoneBtn ? phoneBtn.textContent : ''),
+                        address: clean(addrText),
+                        phone: clean(phoneText),
                         website: webLink ? webLink.href : '',
+                        menu_url: menuLink ? menuLink.href : '',
+                        reservation_url: resLink ? resLink.href : '',
                         rating: clean(ratingSpan ? ratingSpan.textContent : ''),
                         reviews: reviewsBtn ? reviewsBtn.textContent.trim().replace(/[^0-9,]/g, '') : '',
                         about: clean(aboutDiv ? aboutDiv.textContent : ''),
-                        open_status: clean(openStatusSpan ? openStatusSpan.textContent : '')
+                        open_status: clean(openStatusSpan ? openStatusSpan.textContent : ''),
+                        hours_raw: hoursRaw,
+                        day_hours: dayHours,
+                        dine_in: dineIn,
+                        delivery: delivery,
+                        pickup: pickup,
+                        services_list: attrMap.services,
+                        amenities_list: attrMap.amenities,
+                        accessibility_list: attrMap.accessibility,
+                        payment_options_list: attrMap.payment_options
                     };
                 }''')
 
@@ -612,40 +871,80 @@ class WebScraperService:
                             b_name = h1_text.strip()
 
                 if not b_name or b_name.lower() in ["google maps", "maps", "results", ""]:
-                    if "/place/" in final_url:
-                        place_segment = final_url.split("/place/")[1].split("/")[0]
-                        place_clean = re.sub(r'@.*$', '', place_segment)
-                        place_clean = urllib.parse.unquote(place_clean).replace('+', ' ').strip()
-                        if place_clean and not place_clean.startswith("@"):
-                            b_name = place_clean
+                    for u in [final_url, target_url]:
+                        if "/place/" in u:
+                            place_segment = u.split("/place/")[1].split("/")[0]
+                            place_clean = re.sub(r'@.*$', '', place_segment)
+                            place_clean = urllib.parse.unquote(place_clean).replace('+', ' ').strip()
+                            if place_clean and not place_clean.startswith("@") and place_clean.lower() not in ["google maps", "results", "search"]:
+                                b_name = place_clean
+                                break
 
                 if not b_name or b_name.lower() in ["google maps", "maps", "results", ""]:
                     b_name = (await page.title()).replace(" - Google Maps", "").strip()
 
                 if not b_name or b_name.lower() in ["google maps", "maps", "results", ""]:
-                    raise ValueError("No reliable business information was found on this Google Maps place page.")
+                    if data.get("phone") or data.get("address") or data.get("day_hours"):
+                        b_name = "Google Business"
+                    else:
+                        raise ValueError("No reliable business information was found on this Google Maps place page.")
 
-                addr_text = data.get("address", "")
-                area, city, state, pin, plus_c = WebScraperService._parse_structured_address(addr_text)
+                addr_raw = data.get("address", "")
+                addr_clean = WebScraperService._normalize_address_text(addr_raw) or addr_raw
+                area, city, state, pin, plus_c, district, country = WebScraperService._parse_structured_address(addr_clean)
                 lat, lng = WebScraperService._extract_coordinates_from_url(final_url)
 
                 phone_raw = data.get("phone", "")
-                prim_phone, mob_phone, land_phone = WebScraperService._classify_phones([phone_raw] if phone_raw else [])
+                prim_phone, sec_phone, mob_phone, land_phone = WebScraperService._classify_phones([phone_raw] if phone_raw else [])
+
+                # Opening hours per day
+                day_hours = data.get("day_hours") or {}
+                monday_h = day_hours.get("monday") or None
+                tuesday_h = day_hours.get("tuesday") or None
+                wednesday_h = day_hours.get("wednesday") or None
+                thursday_h = day_hours.get("thursday") or None
+                friday_h = day_hours.get("friday") or None
+                saturday_h = day_hours.get("saturday") or None
+                sunday_h = day_hours.get("sunday") or None
+                hours_raw = data.get("hours_raw") or None
+
+                open_stat = data.get("open_status", "") or ""
+                if not monday_h and open_stat and ("24 hours" in open_stat.lower() or "open 24" in open_stat.lower()):
+                    monday_h = tuesday_h = wednesday_h = thursday_h = friday_h = saturday_h = sunday_h = "Open 24 hours"
+                    hours_raw = hours_raw or "Monday to Sunday: Open 24 hours"
+
+                if hours_raw and len(hours_raw) > 500:
+                    hours_raw = hours_raw[:500]
+
+                def _list_to_str(lst):
+                    if not lst:
+                        return None
+                    return ", ".join(set(str(x).strip() for x in lst if str(x).strip()))[:500] or None
+
+                services_val = _list_to_str(data.get("services_list"))
+                amenities_val = _list_to_str(data.get("amenities_list"))
+                accessibility_val = _list_to_str(data.get("accessibility_list"))
+                payment_val = _list_to_str(data.get("payment_options_list"))
+
+                place_id = extract_place_id(final_url) or ""
 
                 # Fallback to search query if address/phone not rendered
-                if not addr_text or not prim_phone:
+                if not addr_clean or not prim_phone:
                     try:
                         search_res = await WebScraperService._extract_google_maps_search(
                             f"https://www.google.com/maps/search/{urllib.parse.quote(b_name)}"
                         )
                         if search_res:
                             fb = search_res[0]
-                            addr_text = addr_text or fb.get("address", "")
+                            addr_clean = addr_clean or fb.get("address", "")
                             area = area or fb.get("area", "")
                             city = city or fb.get("city", "")
                             state = state or fb.get("state", "")
+                            district = district or fb.get("district", "")
+                            country = country or fb.get("country", "")
                             pin = pin or fb.get("postal_code", "")
                             prim_phone = prim_phone or fb.get("phone")
+                            sec_phone = sec_phone or fb.get("secondary_phone")
                             land_phone = land_phone or fb.get("phone_landline")
                             mob_phone = mob_phone or fb.get("phone_mobile")
                             data["category"] = data.get("category") or fb.get("primary_category", "")
@@ -653,6 +952,8 @@ class WebScraperService:
                             data["reviews"] = data.get("reviews") or fb.get("review_count", "")
                             lat = lat or fb.get("latitude", "")
                             lng = lng or fb.get("longitude", "")
+                            if not place_id:
+                                place_id = fb.get("google_place_id") or ""
                     except Exception:
                         pass
 
@@ -666,21 +967,42 @@ class WebScraperService:
                     "rating": data.get("rating", "")[:50],
                     "review_count": data.get("reviews", "")[:50],
                     "open_now": data.get("open_status", "")[:50],
-                    "address": addr_text[:400],
-                    "area": area[:250],
-                    "city": city[:250],
-                    "state": state[:250],
+                    "today_open_status": data.get("open_status", "")[:50],
+                    "address": addr_clean[:400],
+                    "area": area[:250] if area else "",
+                    "city": city[:250] if city else "",
+                    "state": state[:250] if state else "",
+                    "district": district[:250] if district else "",
+                    "country": country[:100] if country else "India",
                     "postal_code": pin[:50],
                     "latitude": lat[:50],
                     "longitude": lng[:50],
                     "phone": prim_phone,
+                    "secondary_phone": sec_phone,
                     "phone_landline": land_phone,
                     "phone_mobile": mob_phone,
                     "email": None,
-                    "website": data.get("website") or target_url,
+                    "website": data.get("website") or None,
                     "description": about_val[:1000],
                     "about_us": about_val[:1000],
-                    "services": "Google Maps Place",
+                    "monday_hours": monday_h,
+                    "tuesday_hours": tuesday_h,
+                    "wednesday_hours": wednesday_h,
+                    "thursday_hours": thursday_h,
+                    "friday_hours": friday_h,
+                    "saturday_hours": saturday_h,
+                    "sunday_hours": sunday_h,
+                    "opening_hours": hours_raw,
+                    "services": services_val,
+                    "amenities": amenities_val,
+                    "accessibility": accessibility_val,
+                    "payment_options": payment_val,
+                    "dine_in": data.get("dine_in") or None,
+                    "delivery": data.get("delivery") or None,
+                    "pickup": data.get("pickup") or None,
+                    "reservation_url": data.get("reservation_url") or None,
+                    "menu_url": data.get("menu_url") or None,
+                    "google_place_id": place_id[:255] if place_id else None,
                     "source_type": "GOOGLE_MAPS_PLACE",
                     "data_source": "Google Maps Place"
                 }]
@@ -807,6 +1129,14 @@ class WebScraperService:
             return []
 
     @staticmethod
+    def _normalize_address_text(raw: str) -> str:
+        """
+        Second-pass normalization for address strings.
+        Uses clean_address_text from app.utils.helpers.
+        """
+        return clean_address_text(raw) or ""
+
+    @staticmethod
     def _extract_coordinates_from_url(url_str: str) -> Tuple[str, str]:
         """Extracts latitude and longitude from Google Maps URL format."""
         if not url_str:
@@ -829,110 +1159,169 @@ class WebScraperService:
         full_text: str, 
         search_location: Optional[str] = None, 
         category_hint: Optional[str] = None
-    ) -> Tuple[str, str, str, str, str]:
+    ) -> Tuple:
         """
-        Parses structured address components: (Area, City, State, PostalCode, PlusCode) from address string.
-        Filters out Plus Codes, coordinates, zoom tokens, category terms, ratings, and open status noise.
+        Parses structured address components from a raw address string.
+
+        Returns:
+            (area, city, state, pin_code, plus_code, district, country)
+
+        area      = first 1-2 street-level tokens (road/neighbourhood), NOT the entire address
+        city      = resolved from search_location, or detected from known city names
+        state     = matched from comprehensive state list / CITY_STATE_MAP
+        pin_code  = 5-6 digit postal code
+        plus_code = Google Plus Code (XXXX+XX format)
+        district  = matched from known district names
+        country   = "India" when a state/city is detected
         """
         if not full_text:
-            return "", (search_location or ""), "", "", ""
+            dist_res, state_res, ctry_res = resolve_location(search_location)
+            return "", (search_location or "").title(), state_res or "", "", "", dist_res or "", ctry_res or "India"
 
-        # Clean text and non-printable icon characters
-        clean_text = re.sub(r'[^\x20-\x7E]', ' ', full_text)
-        clean_text = re.sub(r'@[\d\.-]+,[\d\.-]+.*$', '', clean_text).strip()
+        clean_text = clean_address_text(full_text) or full_text
 
-        # 1. Extract Plus Code (e.g. QHC2+PCV or PQW5+J42)
+        # 1. Plus Code (e.g. QHC2+PCV or PQW5+J42)
         plus_code = ""
         plus_match = re.search(r'\b([A-Z0-9]{4}\+[A-Z0-9]{2,4})\b', clean_text)
         if plus_match:
             plus_code = plus_match.group(1)
             clean_text = clean_text.replace(plus_code, ' ').strip()
 
-        # 2. Extract Postal Code (e.g. 607106 or 600017)
-        pin_code = ""
-        pin_match = re.search(r'\b(\d{5,6})\b', clean_text)
-        if pin_match:
-            pin_code = pin_match.group(1)
+        # 2. Postal Code (e.g. 636004, 600017)
+        pin_code = extract_pin_code(clean_text) or ""
+        if pin_code:
+            clean_text = clean_text.replace(pin_code, ' ').strip()
 
-        # 3. Extract State
-        KNOWN_STATES = [
-            "Tamil Nadu", "Kerala", "Karnataka", "Andhra Pradesh", "Telangana",
-            "Maharashtra", "Delhi", "Gujarat", "West Bengal", "Rajasthan",
-            "Goa", "Puducherry", "Pondicherry"
-        ]
-        state = ""
-        for s_name in KNOWN_STATES:
-            if s_name.lower() in clean_text.lower():
-                state = s_name
-                clean_text = re.sub(re.escape(s_name), ' ', clean_text, flags=re.IGNORECASE).strip()
-                break
+        # 3. Location Resolution (District, State, Country)
+        search_loc_clean = (search_location or "").strip()
+        dist_res, state_res, ctry_res = resolve_location(search_loc_clean or clean_text)
+        district = dist_res or ""
+        state = state_res or ""
+        country = ctry_res or ("India" if (state or district or search_loc_clean) else "")
 
-        # Split into candidate tokens
+        # Fallback state detection if text has state name
+        if not state:
+            KNOWN_STATES = [
+                "Tamil Nadu", "Kerala", "Karnataka", "Andhra Pradesh", "Telangana",
+                "Maharashtra", "Delhi", "Gujarat", "West Bengal", "Rajasthan",
+                "Goa", "Puducherry", "Pondicherry", "Uttarakhand", "Uttar Pradesh",
+                "Punjab", "Haryana", "Himachal Pradesh", "Jammu and Kashmir",
+                "Madhya Pradesh", "Chhattisgarh", "Jharkhand", "Odisha", "Bihar",
+                "Assam", "Meghalaya", "Manipur", "Nagaland", "Tripura", "Mizoram",
+                "Arunachal Pradesh", "Sikkim", "Chandigarh", "Ladakh"
+            ]
+            for s_name in KNOWN_STATES:
+                if s_name.lower() in clean_text.lower():
+                    state = s_name
+                    if not country:
+                        country = "India"
+                    clean_text = re.sub(re.escape(s_name), ' ', clean_text, flags=re.IGNORECASE).strip()
+                    break
+
+        # 4. Resolve City
+        city = ""
+        if search_loc_clean:
+            city = search_loc_clean.title()
+        elif district:
+            city = district
+        else:
+            for token in re.split(r'[,\n|]', clean_text):
+                t = token.strip()
+                d_c, s_c, _ = resolve_location(t)
+                if d_c:
+                    city = d_c
+                    if not district:
+                        district = d_c
+                    if not state:
+                        state = s_c
+                    if not country:
+                        country = "India"
+                    break
+
+        # 5. Tokenize and filter to valid street-level address tokens
         tokens = [t.strip() for t in re.split(r'[|·,\n]', clean_text) if t.strip()]
 
         IGNORE_TERMS = {
-            "directions", "website", "save", "share", "menu", "call", "sponsored", 
+            "directions", "website", "save", "share", "menu", "call", "sponsored",
             "open", "closed", "24 hours", "restaurant", "store", "hospital", "clinic",
             "results", "search", "google maps", "fried chicken restaurant chain", "shopping mall",
-            "vegetarian restaurant", "bakery and cake shop", "bakery", "sweet shop", "snack bar"
+            "vegetarian restaurant", "bakery and cake shop", "bakery", "sweet shop", "snack bar",
+            "india"
         }
 
         valid_tokens = []
+        seen_tok_lower = set()
         for tok in tokens:
             t_lower = tok.lower()
             if t_lower in IGNORE_TERMS or (category_hint and t_lower == category_hint.lower()):
                 continue
             if re.search(r'\b(open|closed|closes|opens|24 hours)\b', t_lower):
                 continue
-            if re.search(r'^\+?\d[\d\s\-]{7,}$', tok):  # Phone numbers
+            if re.search(r'^\+?\d[\d\s\-]{7,}$', tok):
                 continue
-            if re.search(r'^@?[\d\.-]+$', tok) or re.search(r'^\d+z$', t_lower):  # Lat/lng/zoom
+            if re.search(r'^\d{4,}$', tok.replace(' ', '').replace('-', '')):
                 continue
-            if re.search(r'^\d\.\d$', tok) or "star" in t_lower or "review" in t_lower or re.search(r'^\d\.\d\s*\(', tok) or re.search(r'^\([\d,]+\)$', tok):
+            if re.search(r'^@?[\d\.-]+$', tok) or re.search(r'^\d+z$', t_lower):
                 continue
-            if re.search(r'^[A-Z0-9]{4}\+[A-Z0-9]{2,4}', tok):  # Plus code fragment
+            if re.search(r'^\d\.\d$', tok) or "star" in t_lower or "review" in t_lower:
+                continue
+            if re.search(r'^[A-Z0-9]{4}\+[A-Z0-9]{2,4}', tok):
                 continue
 
             cleaned_tok = re.sub(r'^[^\w\s]+', '', tok).strip()
-            cleaned_tok = re.sub(r'[\s\+]*open.*$', '', cleaned_tok, flags=re.IGNORECASE).strip()
-            if cleaned_tok and len(cleaned_tok) > 1 and cleaned_tok.lower() not in IGNORE_TERMS:
-                valid_tokens.append(cleaned_tok)
+            cleaned_tok = re.sub(r'[\s\+]*(open|closed|closes|opens|24\s*hours).*$', '', cleaned_tok, flags=re.IGNORECASE).strip()
+            cleaned_tok = re.sub(r'\+?\d[\d\s\-]{7,}', '', cleaned_tok).strip().rstrip(',')
+            cleaned_tok = cleaned_tok.strip()
+            if not cleaned_tok or len(cleaned_tok) <= 1 or cleaned_tok.lower() in IGNORE_TERMS:
+                continue
 
-        area, city = "", ""
-        search_loc_clean = (search_location or "").strip()
-        if search_loc_clean:
-            city = search_loc_clean.title()
+            # Skip tokens that are just the known state, district or city name (already captured)
+            if state and cleaned_tok.lower() == state.lower():
+                continue
+            if city and cleaned_tok.lower() == city.lower():
+                continue
+            if district and cleaned_tok.lower() == district.lower():
+                continue
 
+            tok_key = cleaned_tok.lower()
+            if tok_key in seen_tok_lower:
+                continue
+            seen_tok_lower.add(tok_key)
+            valid_tokens.append(cleaned_tok)
+
+        # 6. Build area — take ONLY the first 1-2 street-level tokens
+        area = ""
         if valid_tokens:
             non_city_tokens = []
             for v in valid_tokens:
                 if search_loc_clean and v.lower() == search_loc_clean.lower():
-                    city = v.title()
-                else:
-                    non_city_tokens.append(v)
+                    if not city:
+                        city = v.title()
+                    continue
+                non_city_tokens.append(v)
 
             if non_city_tokens:
-                area = ", ".join(non_city_tokens)
-            elif not area and city:
+                street_kw = re.compile(r'\b(rd|road|st|street|lane|ln|ave|avenue|nagar|colony|layout|cross|main|bypass|highway|hwy|salai|marg|path|ganj|floor|block|plot|door)\b', re.IGNORECASE)
+                street_tokens = [t for t in non_city_tokens if re.search(r'\d', t) or street_kw.search(t)]
+                if street_tokens:
+                    area = ", ".join(street_tokens[:2])
+                else:
+                    area = non_city_tokens[0]
+            elif city:
                 area = city
-        elif not area and city:
-            area = city
 
-        if pin_code:
-            city = city.replace(pin_code, "").strip()
-            if state:
-                state = state.replace(pin_code, "").strip()
+        return area, city, state, pin_code, plus_code, district, country
 
-        return area, city, state, pin_code, plus_code
 
     @staticmethod
-    def _classify_phones(candidates: Any) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    def _classify_phones(candidates: Any) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
         if not candidates:
-            return None, None, None
+            return None, None, None, None
 
         if isinstance(candidates, str):
             candidates = [candidates]
 
+        ordered_unique = []
         mobile_num = None
         landline_num = None
         seen_digits = set()
@@ -953,6 +1342,7 @@ class WebScraperService:
             if digits in seen_digits:
                 continue
             seen_digits.add(digits)
+            ordered_unique.append(cleaned[:100])
 
             is_mobile = False
             is_landline = False
@@ -988,11 +1378,10 @@ class WebScraperService:
             elif is_landline and not landline_num:
                 landline_num = cleaned[:100]
 
-            if mobile_num and landline_num:
-                break
+        primary_phone = ordered_unique[0] if ordered_unique else (mobile_num or landline_num)
+        secondary_phone = ordered_unique[1] if len(ordered_unique) > 1 else None
 
-        primary_phone = mobile_num or landline_num
-        return primary_phone, mobile_num, landline_num
+        return primary_phone, secondary_phone, mobile_num, landline_num
 
     @staticmethod
     def _clean_about_us(raw_text: Optional[str]) -> Optional[str]:
@@ -1252,7 +1641,7 @@ class WebScraperService:
             matches = re.findall(r'(\+?\d[\d\s\-]{7,15})', footer_text)
             phone_candidates.extend(matches)
 
-        prim_phone, mob_phone, land_phone = WebScraperService._classify_phones(phone_candidates)
+        prim_phone, sec_phone, mob_phone, land_phone = WebScraperService._classify_phones(phone_candidates)
         clean_about_val = WebScraperService._clean_about_us(description or about_section_text)
 
         return {
@@ -1262,6 +1651,7 @@ class WebScraperService:
             "city": (city.strip()[:250] if city else ""),
             "address": address,
             "phone": prim_phone,
+            "secondary_phone": sec_phone,
             "phone_landline": land_phone,
             "phone_mobile": mob_phone,
             "email": email,
@@ -1275,12 +1665,29 @@ class WebScraperService:
 
     @staticmethod
     def _upsert_scraped_business(extracted: Dict[str, Any], db: Session) -> ScrapedBusiness:
-        """Upserts a scraped business record in MySQL using source_url or (business_name, area, city) as duplicate key."""
+        """Upserts a scraped business record in MySQL using safe-merge logic: never overwrites existing valid data with None or NA."""
         now = datetime.utcnow()
         source_url = extracted["source_url"]
         b_name = extracted["business_name"]
         area = extracted.get("area", "") or ""
         city = extracted.get("city", "") or ""
+
+        def is_valid(v: Any) -> bool:
+            if v is None:
+                return False
+            if isinstance(v, str):
+                s = v.strip()
+                if not s or s.upper() in ("NA", "N/A", "NONE", "NULL", "UNDEFINED", "NOT AVAILABLE"):
+                    return False
+            return True
+
+        def safe_merge(new_v: Any, old_v: Any) -> Any:
+            if is_valid(new_v):
+                return new_v
+            return old_v
+
+        def clean_val(v: Any) -> Any:
+            return v if is_valid(v) else None
 
         existing = db.query(ScrapedBusiness).filter_by(source_url=source_url).first()
         if not existing and extracted.get("source_type") != "YOUTUBE":
@@ -1292,153 +1699,153 @@ class WebScraperService:
 
         ext_land = extracted.get("phone_landline")
         ext_mob = extracted.get("phone_mobile")
-        ext_prim = extracted.get("phone") or ext_land or ext_mob
+        ext_sec = extracted.get("secondary_phone")
+        ext_prim = extracted.get("phone") or ext_mob or ext_land
 
         clean_about = WebScraperService._clean_about_us(extracted.get("about_us") or extracted.get("description"))
 
         if existing:
-            existing.business_name = b_name
-            existing.alternate_name = extracted.get("alternate_name") or existing.alternate_name
+            existing.business_name = safe_merge(b_name, existing.business_name)
+            existing.alternate_name = safe_merge(extracted.get("alternate_name"), existing.alternate_name)
 
             new_cat = extracted.get("primary_category")
-            if new_cat and not re.match(r'^\d+(\.\d+)?$', str(new_cat)):
+            if is_valid(new_cat) and not re.match(r'^\d+(\.\d+)?$', str(new_cat)):
                 existing.primary_category = new_cat
             elif existing.primary_category and re.match(r'^\d+(\.\d+)?$', str(existing.primary_category)):
                 existing.primary_category = None
 
-            existing.additional_categories = extracted.get("additional_categories") or existing.additional_categories
-            existing.description = extracted.get("description") or existing.description
-            existing.about_us = clean_about or existing.about_us
-            if extracted.get("rating") is not None:
+            existing.additional_categories = safe_merge(extracted.get("additional_categories"), existing.additional_categories)
+            existing.description = safe_merge(extracted.get("description"), existing.description)
+            existing.about_us = safe_merge(clean_about, existing.about_us)
+            if is_valid(extracted.get("rating")):
                 existing.rating = extracted.get("rating")
-            if extracted.get("review_count") is not None:
+            if is_valid(extracted.get("review_count")):
                 existing.review_count = extracted.get("review_count")
-            existing.price_level = extracted.get("price_level") or existing.price_level
-            existing.business_status = extracted.get("business_status") or existing.business_status
-            existing.open_now = extracted.get("open_now") if extracted.get("open_now") is not None else existing.open_now
+            existing.price_level = safe_merge(extracted.get("price_level"), existing.price_level)
+            existing.business_status = safe_merge(extracted.get("business_status"), existing.business_status)
+            existing.open_now = safe_merge(extracted.get("open_now"), existing.open_now)
 
-            existing.address = extracted.get("address") or existing.address
-            existing.address_line_1 = extracted.get("address_line_1") or existing.address_line_1
-            existing.address_line_2 = extracted.get("address_line_2") or existing.address_line_2
-            if area:
+            existing.address = safe_merge(extracted.get("address"), existing.address)
+            existing.address_line_1 = safe_merge(extracted.get("address_line_1"), existing.address_line_1)
+            existing.address_line_2 = safe_merge(extracted.get("address_line_2"), existing.address_line_2)
+            if is_valid(area):
                 existing.area = area
-            if city:
+            if is_valid(city):
                 existing.city = city
-            existing.neighborhood = extracted.get("neighborhood") or existing.neighborhood
-            existing.district = extracted.get("district") or existing.district
-            existing.state = extracted.get("state") or existing.state
-            existing.country = extracted.get("country") or existing.country
-            existing.postal_code = extracted.get("postal_code") or existing.postal_code
-            if extracted.get("latitude"):
+            existing.neighborhood = safe_merge(extracted.get("neighborhood"), existing.neighborhood)
+            existing.district = safe_merge(extracted.get("district"), existing.district)
+            existing.state = safe_merge(extracted.get("state"), existing.state)
+            existing.country = safe_merge(extracted.get("country"), existing.country)
+            existing.postal_code = safe_merge(extracted.get("postal_code"), existing.postal_code)
+            if is_valid(extracted.get("latitude")):
                 existing.latitude = extracted.get("latitude")
-            if extracted.get("longitude"):
+            if is_valid(extracted.get("longitude")):
                 existing.longitude = extracted.get("longitude")
-            if extracted.get("plus_code"):
+            if is_valid(extracted.get("plus_code")):
                 existing.plus_code = extracted.get("plus_code")
 
-            existing.phone = ext_prim or existing.phone
-            existing.secondary_phone = extracted.get("secondary_phone") or existing.secondary_phone
-            existing.phone_landline = ext_land or existing.phone_landline
-            existing.phone_mobile = ext_mob or existing.phone_mobile
-            existing.email = extracted.get("email") or existing.email
-            existing.website = extracted.get("website") or existing.website
-            existing.google_maps_url = extracted.get("google_maps_url") or existing.google_maps_url
+            existing.phone = safe_merge(ext_prim, existing.phone)
+            existing.secondary_phone = safe_merge(ext_sec, existing.secondary_phone)
+            existing.phone_landline = safe_merge(ext_land, existing.phone_landline)
+            existing.phone_mobile = safe_merge(ext_mob, existing.phone_mobile)
+            existing.email = safe_merge(extracted.get("email"), existing.email)
+            existing.website = safe_merge(extracted.get("website"), existing.website)
+            existing.google_maps_url = safe_merge(extracted.get("google_maps_url"), existing.google_maps_url)
 
-            existing.monday_hours = extracted.get("monday_hours") or existing.monday_hours
-            existing.tuesday_hours = extracted.get("tuesday_hours") or existing.tuesday_hours
-            existing.wednesday_hours = extracted.get("wednesday_hours") or existing.wednesday_hours
-            existing.thursday_hours = extracted.get("thursday_hours") or existing.thursday_hours
-            existing.friday_hours = extracted.get("friday_hours") or existing.friday_hours
-            existing.saturday_hours = extracted.get("saturday_hours") or existing.saturday_hours
-            existing.sunday_hours = extracted.get("sunday_hours") or existing.sunday_hours
-            existing.opening_hours = extracted.get("opening_hours") or existing.opening_hours
-            existing.today_open_status = extracted.get("today_open_status") or existing.today_open_status
+            existing.monday_hours = safe_merge(extracted.get("monday_hours"), existing.monday_hours)
+            existing.tuesday_hours = safe_merge(extracted.get("tuesday_hours"), existing.tuesday_hours)
+            existing.wednesday_hours = safe_merge(extracted.get("wednesday_hours"), existing.wednesday_hours)
+            existing.thursday_hours = safe_merge(extracted.get("thursday_hours"), existing.thursday_hours)
+            existing.friday_hours = safe_merge(extracted.get("friday_hours"), existing.friday_hours)
+            existing.saturday_hours = safe_merge(extracted.get("saturday_hours"), existing.saturday_hours)
+            existing.sunday_hours = safe_merge(extracted.get("sunday_hours"), existing.sunday_hours)
+            existing.opening_hours = safe_merge(extracted.get("opening_hours"), existing.opening_hours)
+            existing.today_open_status = safe_merge(extracted.get("today_open_status"), existing.today_open_status)
 
-            existing.services = extracted.get("services") or existing.services
-            existing.amenities = extracted.get("amenities") or existing.amenities
-            existing.accessibility = extracted.get("accessibility") or existing.accessibility
-            existing.payment_options = extracted.get("payment_options") or existing.payment_options
-            existing.delivery = extracted.get("delivery") or existing.delivery
-            existing.dine_in = extracted.get("dine_in") or existing.dine_in
-            existing.pickup = extracted.get("pickup") or existing.pickup
-            existing.reservation_url = extracted.get("reservation_url") or existing.reservation_url
-            existing.menu_url = extracted.get("menu_url") or existing.menu_url
+            existing.services = safe_merge(extracted.get("services"), existing.services)
+            existing.amenities = safe_merge(extracted.get("amenities"), existing.amenities)
+            existing.accessibility = safe_merge(extracted.get("accessibility"), existing.accessibility)
+            existing.payment_options = safe_merge(extracted.get("payment_options"), existing.payment_options)
+            existing.delivery = safe_merge(extracted.get("delivery"), existing.delivery)
+            existing.dine_in = safe_merge(extracted.get("dine_in"), existing.dine_in)
+            existing.pickup = safe_merge(extracted.get("pickup"), existing.pickup)
+            existing.reservation_url = safe_merge(extracted.get("reservation_url"), existing.reservation_url)
+            existing.menu_url = safe_merge(extracted.get("menu_url"), existing.menu_url)
 
-            existing.source_type = extracted.get("source_type", "WEBSITE_SCRAPE")
-            existing.search_keyword = extracted.get("search_keyword") or existing.search_keyword
-            existing.search_area = extracted.get("search_area") or existing.search_area
-            existing.google_place_id = extracted.get("google_place_id") or existing.google_place_id
-            existing.google_cid = extracted.get("google_cid") or existing.google_cid
-            existing.data_source = extracted.get("data_source") or existing.data_source
-            existing.enrichment_status = extracted.get("enrichment_status") or existing.enrichment_status
+            existing.source_type = safe_merge(extracted.get("source_type"), existing.source_type or "WEBSITE_SCRAPE")
+            existing.search_keyword = safe_merge(extracted.get("search_keyword"), existing.search_keyword)
+            existing.search_area = safe_merge(extracted.get("search_area"), existing.search_area)
+            existing.google_place_id = safe_merge(extracted.get("google_place_id"), existing.google_place_id)
+            existing.google_cid = safe_merge(extracted.get("google_cid"), existing.google_cid)
+            existing.data_source = safe_merge(extracted.get("data_source"), existing.data_source)
+            existing.enrichment_status = safe_merge(extracted.get("enrichment_status"), existing.enrichment_status)
             existing.status = "ACTIVE"
-            existing.scraped_at = now
             existing.updated_at = now
             record = existing
         else:
             record = ScrapedBusiness(
                 source_url=source_url,
                 business_name=b_name,
-                alternate_name=extracted.get("alternate_name"),
-                primary_category=extracted.get("primary_category"),
-                additional_categories=extracted.get("additional_categories"),
-                description=extracted.get("description"),
-                about_us=clean_about,
-                rating=extracted.get("rating"),
-                review_count=extracted.get("review_count"),
-                price_level=extracted.get("price_level"),
-                business_status=extracted.get("business_status"),
-                open_now=extracted.get("open_now"),
+                alternate_name=clean_val(extracted.get("alternate_name")),
+                primary_category=clean_val(extracted.get("primary_category")),
+                additional_categories=clean_val(extracted.get("additional_categories")),
+                description=clean_val(extracted.get("description")),
+                about_us=clean_val(clean_about),
+                rating=clean_val(extracted.get("rating")),
+                review_count=clean_val(extracted.get("review_count")),
+                price_level=clean_val(extracted.get("price_level")),
+                business_status=clean_val(extracted.get("business_status")),
+                open_now=clean_val(extracted.get("open_now")),
 
-                address=extracted.get("address"),
-                address_line_1=extracted.get("address_line_1"),
-                address_line_2=extracted.get("address_line_2"),
-                area=area,
-                neighborhood=extracted.get("neighborhood"),
-                city=city,
-                district=extracted.get("district"),
-                state=extracted.get("state"),
-                country=extracted.get("country"),
-                postal_code=extracted.get("postal_code"),
-                latitude=extracted.get("latitude"),
-                longitude=extracted.get("longitude"),
-                plus_code=extracted.get("plus_code"),
+                address=clean_val(extracted.get("address")),
+                address_line_1=clean_val(extracted.get("address_line_1")),
+                address_line_2=clean_val(extracted.get("address_line_2")),
+                area=clean_val(area),
+                neighborhood=clean_val(extracted.get("neighborhood")),
+                city=clean_val(city),
+                district=clean_val(extracted.get("district")),
+                state=clean_val(extracted.get("state")),
+                country=clean_val(extracted.get("country")),
+                postal_code=clean_val(extracted.get("postal_code")),
+                latitude=clean_val(extracted.get("latitude")),
+                longitude=clean_val(extracted.get("longitude")),
+                plus_code=clean_val(extracted.get("plus_code")),
 
-                phone=ext_prim,
-                secondary_phone=extracted.get("secondary_phone"),
-                phone_landline=ext_land,
-                phone_mobile=ext_mob,
-                email=extracted.get("email"),
-                website=extracted.get("website"),
-                google_maps_url=extracted.get("google_maps_url"),
+                phone=clean_val(ext_prim),
+                secondary_phone=clean_val(ext_sec),
+                phone_landline=clean_val(ext_land),
+                phone_mobile=clean_val(ext_mob),
+                email=clean_val(extracted.get("email")),
+                website=clean_val(extracted.get("website")),
+                google_maps_url=clean_val(extracted.get("google_maps_url")),
 
-                monday_hours=extracted.get("monday_hours"),
-                tuesday_hours=extracted.get("tuesday_hours"),
-                wednesday_hours=extracted.get("wednesday_hours"),
-                thursday_hours=extracted.get("thursday_hours"),
-                friday_hours=extracted.get("friday_hours"),
-                saturday_hours=extracted.get("saturday_hours"),
-                sunday_hours=extracted.get("sunday_hours"),
-                opening_hours=extracted.get("opening_hours"),
-                today_open_status=extracted.get("today_open_status"),
+                monday_hours=clean_val(extracted.get("monday_hours")),
+                tuesday_hours=clean_val(extracted.get("tuesday_hours")),
+                wednesday_hours=clean_val(extracted.get("wednesday_hours")),
+                thursday_hours=clean_val(extracted.get("thursday_hours")),
+                friday_hours=clean_val(extracted.get("friday_hours")),
+                saturday_hours=clean_val(extracted.get("saturday_hours")),
+                sunday_hours=clean_val(extracted.get("sunday_hours")),
+                opening_hours=clean_val(extracted.get("opening_hours")),
+                today_open_status=clean_val(extracted.get("today_open_status")),
 
-                services=extracted.get("services"),
-                amenities=extracted.get("amenities"),
-                accessibility=extracted.get("accessibility"),
-                payment_options=extracted.get("payment_options"),
-                delivery=extracted.get("delivery"),
-                dine_in=extracted.get("dine_in"),
-                pickup=extracted.get("pickup"),
-                reservation_url=extracted.get("reservation_url"),
-                menu_url=extracted.get("menu_url"),
+                services=clean_val(extracted.get("services")),
+                amenities=clean_val(extracted.get("amenities")),
+                accessibility=clean_val(extracted.get("accessibility")),
+                payment_options=clean_val(extracted.get("payment_options")),
+                delivery=clean_val(extracted.get("delivery")),
+                dine_in=clean_val(extracted.get("dine_in")),
+                pickup=clean_val(extracted.get("pickup")),
+                reservation_url=clean_val(extracted.get("reservation_url")),
+                menu_url=clean_val(extracted.get("menu_url")),
 
                 source_type=extracted.get("source_type", "WEBSITE_SCRAPE"),
-                search_keyword=extracted.get("search_keyword"),
-                search_area=extracted.get("search_area"),
-                google_place_id=extracted.get("google_place_id"),
-                google_cid=extracted.get("google_cid"),
-                data_source=extracted.get("data_source"),
-                enrichment_status=extracted.get("enrichment_status"),
+                search_keyword=clean_val(extracted.get("search_keyword")),
+                search_area=clean_val(extracted.get("search_area")),
+                google_place_id=clean_val(extracted.get("google_place_id")),
+                google_cid=clean_val(extracted.get("google_cid")),
+                data_source=clean_val(extracted.get("data_source")),
+                enrichment_status=clean_val(extracted.get("enrichment_status")),
                 status="ACTIVE",
                 scraped_at=now
             )
@@ -1446,4 +1853,64 @@ class WebScraperService:
 
         db.commit()
         db.refresh(record)
+        return record
+
+    @classmethod
+    async def enrich_business_place_details(cls, business_id: str, db: Session) -> ScrapedBusiness:
+        """
+        Fetches complete place details (hours, services, amenities, etc.) using Google Places API or Google Maps URL
+        and safe-merges them into MySQL table `scraped_businesses`.
+        """
+        record = db.query(ScrapedBusiness).filter_by(id=business_id).first()
+        if not record:
+            raise ValueError(f"Business record with ID '{business_id}' not found.")
+
+        target_url = record.google_maps_url or record.source_url
+        place_id = record.google_place_id or extract_place_id(target_url or "")
+
+        # Try Google Places API first if configured
+        if place_id and GooglePlacesService.is_configured():
+            try:
+                import httpx
+                base_dict = {
+                    "source_url": record.source_url,
+                    "google_maps_url": record.google_maps_url,
+                    "business_name": record.business_name,
+                    "primary_category": record.primary_category,
+                    "phone": record.phone,
+                    "address": record.address,
+                    "city": record.city,
+                    "area": record.area,
+                    "latitude": record.latitude,
+                    "longitude": record.longitude,
+                    "google_place_id": place_id,
+                }
+                semaphore = asyncio.Semaphore(1)
+                async with httpx.AsyncClient(timeout=20.0) as client:
+                    enriched = await GooglePlacesService.fetch_place_details(
+                        client=client,
+                        place_id=place_id,
+                        base_item=base_dict,
+                        semaphore=semaphore
+                    )
+                    if enriched and enriched.get("enrichment_status") == "ENRICHED":
+                        record = cls._upsert_scraped_business(extracted=enriched, db=db)
+                        return record
+            except Exception as e:
+                logger.warning(f"Google Places API single enrichment error: {e}")
+
+        if not target_url or "google.com/maps" not in target_url:
+            return record
+
+        try:
+            place_details = await cls._extract_google_maps_place(target_url)
+            if place_details:
+                extracted = place_details[0]
+                extracted["enrichment_status"] = "ENRICHED"
+                extracted["source_url"] = record.source_url
+                extracted["business_name"] = record.business_name or extracted.get("business_name")
+                record = cls._upsert_scraped_business(extracted=extracted, db=db)
+        except Exception as e:
+            logger.warning(f"Enrichment error for business {business_id}: {e}")
+
         return record

@@ -40,8 +40,17 @@ CREATE TABLE IF NOT EXISTS `google_business_locations` (
   `google_business_account_id` VARCHAR(191) NULL,
   `google_location_id` VARCHAR(255) NULL,
   `business_name` VARCHAR(255) NOT NULL,
+  `primary_category` VARCHAR(255) NULL,
+  `rating` VARCHAR(50) NULL,
+  `review_count` VARCHAR(50) NULL,
+  `phone` VARCHAR(100) NULL,
+  `website` TEXT NULL,
   `area` VARCHAR(255) NULL,
   `city` VARCHAR(255) NULL,
+  `state` VARCHAR(255) NULL,
+  `postal_code` VARCHAR(100) NULL,
+  `latitude` VARCHAR(100) NULL,
+  `longitude` VARCHAR(100) NULL,
   `address` TEXT NULL,
   `source` VARCHAR(191) DEFAULT 'Google API',
   `status` VARCHAR(50) DEFAULT 'ACTIVE',
@@ -56,6 +65,7 @@ CREATE TABLE IF NOT EXISTS `google_business_locations` (
   CONSTRAINT `fk_locations_account` FOREIGN KEY (`google_business_account_id`)
     REFERENCES `google_business_accounts` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- -----------------------------------------------------------------------------
 -- 3. Table: scraped_businesses
@@ -140,4 +150,126 @@ CREATE TABLE IF NOT EXISTS `scraped_businesses` (
   KEY `idx_scraped_category` (`primary_category`),
   KEY `idx_scraped_status` (`status`),
   KEY `idx_scraped_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 4. Table: users
+-- Stores user accounts, administrative roles, and authentication hashes
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` VARCHAR(191) NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `password_hash` VARCHAR(255) NOT NULL,
+  `salt` VARCHAR(64) NOT NULL,
+  `full_name` VARCHAR(255) NULL,
+  `role` VARCHAR(50) NOT NULL DEFAULT 'CUSTOMER',
+  `status` VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+  `plan_id` VARCHAR(191) NULL,
+  `last_login_at` DATETIME NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_users_email` (`email`),
+  KEY `idx_users_role` (`role`),
+  KEY `idx_users_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 5. Table: admin_permissions
+-- Configurable granular permissions for Admin accounts
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `admin_permissions` (
+  `id` VARCHAR(191) NOT NULL,
+  `user_id` VARCHAR(191) NOT NULL,
+  `can_manage_users` TINYINT(1) DEFAULT 1,
+  `can_manage_businesses` TINYINT(1) DEFAULT 1,
+  `can_manage_scrapers` TINYINT(1) DEFAULT 1,
+  `can_manage_exports` TINYINT(1) DEFAULT 1,
+  `can_manage_plans` TINYINT(1) DEFAULT 0,
+  `can_view_analytics` TINYINT(1) DEFAULT 1,
+  `can_view_audit_logs` TINYINT(1) DEFAULT 0,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_admin_permissions_user_id` (`user_id`),
+  CONSTRAINT `fk_permissions_user` FOREIGN KEY (`user_id`)
+    REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 6. Table: subscription_plans
+-- Subscription tiers and usage limit controls
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `subscription_plans` (
+  `id` VARCHAR(191) NOT NULL,
+  `name` VARCHAR(50) NOT NULL,
+  `display_name` VARCHAR(100) NOT NULL,
+  `price_monthly` DOUBLE DEFAULT 0.0,
+  `search_limit` INT DEFAULT 50,
+  `scrape_limit` INT DEFAULT 20,
+  `bulk_scrape_limit` INT DEFAULT 5,
+  `export_limit` INT DEFAULT 10,
+  `features_json` TEXT NULL,
+  `is_active` TINYINT(1) DEFAULT 1,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_plans_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 7. Table: audit_logs
+-- Immutable chronological audit trail of all administrative actions
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `audit_logs` (
+  `id` VARCHAR(191) NOT NULL,
+  `user_id` VARCHAR(191) NULL,
+  `actor_email` VARCHAR(255) NOT NULL,
+  `action` VARCHAR(100) NOT NULL,
+  `target_type` VARCHAR(50) NULL,
+  `target_id` VARCHAR(191) NULL,
+  `ip_address` VARCHAR(100) NULL,
+  `details_json` TEXT NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_audit_logs_created_at` (`created_at`),
+  KEY `idx_audit_logs_actor` (`actor_email`),
+  KEY `idx_audit_logs_action` (`action`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 8. Table: export_logs
+-- Logs of CSV and data export requests
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `export_logs` (
+  `id` VARCHAR(191) NOT NULL,
+  `user_id` VARCHAR(191) NULL,
+  `user_email` VARCHAR(255) NULL,
+  `export_type` VARCHAR(50) NOT NULL,
+  `record_count` INT DEFAULT 0,
+  `file_name` VARCHAR(255) NOT NULL,
+  `file_format` VARCHAR(50) DEFAULT 'CSV',
+  `ip_address` VARCHAR(100) NULL,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_export_logs_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 9. Table: scraping_jobs
+-- Scraping jobs execution history and monitoring
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `scraping_jobs` (
+  `id` VARCHAR(191) NOT NULL,
+  `user_id` VARCHAR(191) NULL,
+  `job_type` VARCHAR(50) NOT NULL,
+  `query_or_url` TEXT NOT NULL,
+  `status` VARCHAR(50) DEFAULT 'COMPLETED',
+  `results_count` INT DEFAULT 0,
+  `error_message` TEXT NULL,
+  `duration_ms` INT DEFAULT 0,
+  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_scraping_jobs_created_at` (`created_at`),
+  KEY `idx_scraping_jobs_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

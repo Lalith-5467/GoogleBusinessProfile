@@ -1,6 +1,16 @@
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+import re
+
+from app.utils.helpers import (
+    clean_address_text,
+    resolve_location,
+    extract_place_id,
+    extract_pin_code
+)
+
+
 
 class CompanyScrapeRequest(BaseModel):
     url: str = Field(..., description="Public company/business website URL to scrape")
@@ -83,6 +93,48 @@ class ScrapedBusinessResponse(BaseModel):
     scraped_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def _normalize_address_fields(self) -> "ScrapedBusinessResponse":
+        """
+        Cleans address and area fields on every outbound response.
+        Handles both freshly scraped records and old DB records that may still
+        contain phone numbers, open/close status text, or duplicate fragments.
+        Auto-extracts place ID, postal code, district, state, country if missing.
+        Phone, landline, and mobile fields are NOT touched.
+        """
+        if self.address:
+            self.address = clean_address_text(self.address)
+        if self.area:
+            self.area = clean_address_text(self.area)
+
+        # 1. Auto-extract place ID if missing
+        if not self.google_place_id and self.google_maps_url:
+            self.google_place_id = extract_place_id(self.google_maps_url)
+
+        # 2. Auto-extract location hierarchy if missing
+        if not self.district or not self.state or not self.country:
+            loc_candidate = self.city or self.area or self.address
+            if loc_candidate:
+                dist, st, ctry = resolve_location(loc_candidate)
+                if not self.district and dist:
+                    self.district = dist
+                if not self.state and st:
+                    self.state = st
+                if not self.country and ctry:
+                    self.country = ctry
+
+        # 3. Auto-extract postal code if missing
+        if not self.postal_code:
+            pin = extract_pin_code(self.address or self.area or "")
+            if pin:
+                self.postal_code = pin
+
+        # 4. Clear fake services placeholder
+        if self.services and self.services.strip().lower() == "google maps search result":
+            self.services = None
+
+        return self
 
 class CompanyScrapeResponse(BaseModel):
     success: bool

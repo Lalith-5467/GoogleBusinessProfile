@@ -115,7 +115,7 @@ export interface ScraperDeleteResponse {
   total_count: number;
 }
 
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+const API_BASE = ((import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE || '') as string).replace(/\/+$/, '');
 
 export const scraperApi = {
   async scrapeCompany(url: string): Promise<CompanyScrapeResponse> {
@@ -223,5 +223,23 @@ export const scraperApi = {
     a.click();
     window.URL.revokeObjectURL(downloadUrl);
     document.body.removeChild(a);
+  },
+
+  async getBusinessById(id: string): Promise<ScrapedBusiness> {
+    const response = await fetch(`${API_BASE}/api/scraper/businesses/${id}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch business record: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  async enrichBusiness(id: string): Promise<ScrapedBusiness> {
+    const response = await fetch(`${API_BASE}/api/scraper/businesses/${id}/enrich`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to enrich business details: ${response.statusText}`);
+    }
+    return response.json();
   }
 };

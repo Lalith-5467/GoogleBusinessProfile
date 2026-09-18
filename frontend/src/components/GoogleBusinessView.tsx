@@ -1,18 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Building2, 
-  RefreshCw, 
-  Download, 
   CheckCircle2, 
   AlertTriangle, 
   MapPin, 
-  ShieldCheck, 
   Loader2, 
-  Trash2, 
   PlusCircle, 
   Database,
-  ChevronLeft,
-  ChevronRight,
   X,
   Search,
   Hash,
@@ -30,32 +24,21 @@ import {
 } from '../services/googleBusinessApi';
 import { scraperApi, ScrapedBusiness } from '../services/scraperApi';
 import { exportScrapedBusinessesCsv } from '../utils';
+import { useToast } from '../context';
 
 export const GoogleBusinessView: React.FC = () => {
   const [locations, setLocations] = useState<BusinessLocation[]>([]);
   const [status, setStatus] = useState<AccountStatus | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [syncing, setSyncing] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const toast = useToast();
+  const setError = React.useCallback((msg: string | null) => {
+    if (msg) toast.error(msg);
+  }, [toast]);
+  const setSuccessMsg = React.useCallback((msg: string | null) => {
+    if (msg) toast.success(msg);
+  }, [toast]);
 
-  // Pagination State for Locations table
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageSize = 10;
-
-  // Add Record Modal control
-  const [showAddModal, setShowAddModal] = useState<boolean>(false);
-
-  // Add Record Form state
-  const [newBiz, setNewBiz] = useState({
-    business_name: '',
-    area: '',
-    city: '',
-    address: '',
-    source: 'Manual Entry'
-  });
 
   // Business Search State
   const [searchCount, setSearchCount] = useState<string>('');
@@ -66,9 +49,47 @@ export const GoogleBusinessView: React.FC = () => {
   const [searchResults, setSearchResults] = useState<ScrapedBusiness[]>([]);
   const [lastSearchExecuted, setLastSearchExecuted] = useState<boolean>(false);
   const [selectedBusiness, setSelectedBusiness] = useState<ScrapedBusiness | null>(null);
+  const [isEnriching, setIsEnriching] = useState<boolean>(false);
+
+  const handleOpenDetails = async (biz: ScrapedBusiness) => {
+    setSelectedBusiness(biz);
+    if (biz.google_maps_url && (!biz.monday_hours || !biz.services)) {
+      setIsEnriching(true);
+      try {
+        const enriched = await scraperApi.enrichBusiness(biz.id);
+        if (enriched) {
+          setSelectedBusiness(prev => (prev && prev.id === biz.id ? enriched : prev));
+          setSearchResults(prev => prev.map(item => item.id === biz.id ? enriched : item));
+          setLocations(prev => prev.map(item => item.id === biz.id ? (enriched as any) : item));
+        }
+      } catch (err) {
+        console.warn('Place enrichment notice:', err);
+      } finally {
+        setIsEnriching(false);
+      }
+    }
+  };
   
-  // Selection state for results table export
+  // Selection state for results table export and saving
   const [selectedResultIds, setSelectedResultIds] = useState<string[]>([]);
+  const [savingBatch, setSavingBatch] = useState<boolean>(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  const isBusinessSaved = React.useCallback((biz: ScrapedBusiness): boolean => {
+    const normName = (biz.business_name || '').trim().toLowerCase();
+    const normCity = (biz.city || '').trim().toLowerCase();
+    const normArea = (biz.area || '').trim().toLowerCase();
+
+    return locations.some(loc => {
+      if (biz.google_place_id && loc.google_location_id && loc.google_location_id.includes(biz.google_place_id)) {
+        return true;
+      }
+      const lName = (loc.business_name || '').trim().toLowerCase();
+      const lCity = (loc.city || '').trim().toLowerCase();
+      const lArea = (loc.area || '').trim().toLowerCase();
+      return lName === normName && (lCity === normCity || !normCity || !lCity) && (lArea === normArea || !normArea || !lArea);
+    });
+  }, [locations]);
 
   // Statistics State
   const [totalSearches, setTotalSearches] = useState<number>(() => {
@@ -101,7 +122,20 @@ export const GoogleBusinessView: React.FC = () => {
 
   useEffect(() => {
     fetchInitialData();
-  }, []);
+
+    // Check for OAuth redirect params
+    const params = new URLSearchParams(window.location.search);
+    const authStatus = params.get('auth');
+    if (authStatus === 'success') {
+      toast.success('Google Business Profile account connected successfully.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      fetchInitialData();
+    } else if (authStatus === 'error') {
+      const errorMsg = params.get('error') || 'Google authentication failed. Please verify credentials.';
+      toast.error(decodeURIComponent(errorMsg));
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [toast]);
 
   const refreshCounts = async () => {
     try {
@@ -116,88 +150,85 @@ export const GoogleBusinessView: React.FC = () => {
     }
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    setError(null);
-    setSuccessMsg(null);
-    try {
-      const result = await googleBusinessApi.syncBusinesses();
-      setLocations(result.locations);
-      setSuccessMsg(result.message || `Successfully synced ${result.synced_count} business locations from Google API.`);
-      await refreshCounts();
-    } catch (err: any) {
-      console.error("Sync failed:", err);
-      setError(err.message || "Failed to synchronize businesses with Google API.");
-    } finally {
-      setSyncing(false);
-    }
-  };
 
-  const handleAddLocation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newBiz.business_name.trim()) {
-      setError("Business Name is required.");
+
+  const handleSaveSelected = async () => {
+    const targets = selectedResultIds.length > 0 
+      ? searchResults.filter(biz => selectedResultIds.includes(biz.id)) 
+      : searchResults;
+
+    if (targets.length === 0) {
+      setError("No search results available to save.");
       return;
     }
 
-    setLoading(true);
+    setSavingBatch(true);
     setError(null);
-    setSuccessMsg(null);
     try {
-      await googleBusinessApi.addLocation({
-        business_name: newBiz.business_name.trim(),
-        area: newBiz.area.trim() || '',
-        city: newBiz.city.trim() || '',
-        address: newBiz.address.trim() || undefined,
-        source: newBiz.source || 'Manual Entry'
-      });
-      setSuccessMsg(`Business record '${newBiz.business_name}' saved successfully.`);
-      setShowAddModal(false);
-      setNewBiz({ business_name: '', area: '', city: '', address: '', source: 'Manual Entry' });
-      await refreshCounts();
-    } catch (err: any) {
-      console.error("Failed to add location:", err);
-      setError(err.message || "Failed to save new business record.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      const items = targets.map(biz => ({
+        id: biz.id,
+        google_place_id: biz.google_place_id || undefined,
+        google_location_id: biz.google_place_id ? `google-${biz.google_place_id}` : undefined,
+        business_name: biz.business_name,
+        area: biz.area || '',
+        city: biz.city || '',
+        state: biz.state || undefined,
+        postal_code: biz.postal_code || undefined,
+        latitude: biz.latitude || undefined,
+        longitude: biz.longitude || undefined,
+        address: biz.address || '',
+        source: biz.data_source || (biz.source_type === 'GOOGLE_PLACES_API' ? 'Google Places API' : 'Business Search'),
+        phone: biz.phone || undefined,
+        website: biz.website || undefined,
+        rating: biz.rating || undefined,
+        review_count: biz.review_count || undefined,
+        primary_category: biz.primary_category || undefined,
+      }));
 
-  const handleDeleteLocation = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete '${name}'?`)) {
-      return;
-    }
-
-    setDeletingId(id);
-    setError(null);
-    setSuccessMsg(null);
-    try {
-      const res = await googleBusinessApi.deleteLocation(id);
+      const res = await googleBusinessApi.saveBatchLocations(items);
       setSuccessMsg(res.message);
       await refreshCounts();
     } catch (err: any) {
-      console.error("Delete failed:", err);
-      setError(err.message || "Failed to delete record.");
+      console.error("Save selected failed:", err);
+      setError(err.message || "Failed to save selected businesses to database.");
     } finally {
-      setDeletingId(null);
+      setSavingBatch(false);
     }
   };
 
-  const handleExportCsv = async () => {
-    setExporting(true);
+  const handleSaveSingle = async (biz: ScrapedBusiness) => {
+    setSavingId(biz.id);
     setError(null);
     try {
-      await googleBusinessApi.triggerCsvDownload();
-      const updatedExports = csvExports + 1;
-      setCsvExports(updatedExports);
-      localStorage.setItem('gb_csv_exports', String(updatedExports));
+      const res = await googleBusinessApi.saveBatchLocations([{
+        id: biz.id,
+        google_place_id: biz.google_place_id || undefined,
+        google_location_id: biz.google_place_id ? `google-${biz.google_place_id}` : undefined,
+        business_name: biz.business_name,
+        area: biz.area || '',
+        city: biz.city || '',
+        state: biz.state || undefined,
+        postal_code: biz.postal_code || undefined,
+        latitude: biz.latitude || undefined,
+        longitude: biz.longitude || undefined,
+        address: biz.address || '',
+        source: biz.data_source || (biz.source_type === 'GOOGLE_PLACES_API' ? 'Google Places API' : 'Business Search'),
+        phone: biz.phone || undefined,
+        website: biz.website || undefined,
+        rating: biz.rating || undefined,
+        review_count: biz.review_count || undefined,
+        primary_category: biz.primary_category || undefined,
+      }]);
+      setSuccessMsg(`Business '${biz.business_name}' saved to database.`);
+      await refreshCounts();
     } catch (err: any) {
-      console.error("Export failed:", err);
-      setError(err.message || "Failed to download CSV export file.");
+      console.error("Save single failed:", err);
+      setError(err.message || "Failed to save business record.");
     } finally {
-      setExporting(false);
+      setSavingId(null);
     }
   };
+
 
   const handleExportSearchCsv = async () => {
     if (searchResults.length === 0) {
@@ -230,19 +261,6 @@ export const GoogleBusinessView: React.FC = () => {
     }
   };
 
-  const handleConnectOAuth = async () => {
-    try {
-      const res = await googleBusinessApi.getAuthUrl();
-      if (res.url) {
-        window.location.href = res.url;
-      } else {
-        setError(res.message || "Google OAuth is not configured on the backend.");
-      }
-    } catch (err: any) {
-      setError(err.message || "Failed to initialize Google OAuth connection.");
-    }
-  };
-
   // Business Search Submission Handler
   const handleBusinessSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -270,7 +288,7 @@ export const GoogleBusinessView: React.FC = () => {
       const bizList = res.businesses || [];
       setSearchResults(bizList);
       setLastSearchExecuted(true);
-      const foundCount = res.total_returned !== undefined ? res.total_returned : bizList.length;
+      const foundCount = bizList.length;
       setBusinessesFound(foundCount);
 
       // Increment Total Searches statistic
@@ -281,7 +299,6 @@ export const GoogleBusinessView: React.FC = () => {
       if (foundCount > 0) {
         setSuccessMsg(`Search completed successfully. Found ${foundCount} matching businesses for '${searchKeyword.trim()}' in '${searchLocation.trim()}'.`);
       }
-      await refreshCounts();
     } catch (err: any) {
       console.error("Business search error:", err);
       const msg = err.message || "Business search operation failed.";
@@ -289,6 +306,7 @@ export const GoogleBusinessView: React.FC = () => {
       setSearchError(msg);
       setLastSearchExecuted(true);
       setSearchResults([]);
+      setBusinessesFound(0);
     } finally {
       setIsSearching(false);
     }
@@ -310,11 +328,7 @@ export const GoogleBusinessView: React.FC = () => {
     );
   };
 
-  const totalBusinesses = status ? status.total_locations : locations.length;
-  const totalItems = locations.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  const startIndex = (currentPage - 1) * pageSize;
-  const paginatedLocations = locations.slice(startIndex, startIndex + pageSize);
+  const totalBusinesses = searchResults.length;
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
@@ -343,7 +357,7 @@ export const GoogleBusinessView: React.FC = () => {
               TOTAL BUSINESSES
             </div>
             <div className="text-2xl sm:text-3xl font-heading font-bold text-[#1D1E18] tracking-tight mt-0.5">
-              {loading ? (
+              {isSearching ? (
                 <span className="text-[#68736B] animate-pulse">--</span>
               ) : (
                 totalBusinesses
@@ -353,59 +367,7 @@ export const GoogleBusinessView: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. COMPACT OAUTH STATUS BADGE */}
-      {status && (
-        <div className={`p-4 rounded-[12px] border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${
-          status.is_connected 
-            ? 'bg-[#EAF4EE] border-[#AAD2BA] text-[#1D1E18]' 
-            : 'bg-white border-[#DDE5DE] text-[#1D1E18]'
-        }`}>
-          <div className="flex items-center gap-3">
-            {status.is_connected ? (
-              <ShieldCheck className="w-5 h-5 text-[#2F7D4A] shrink-0" />
-            ) : (
-              <div className="w-3 h-3 rounded-full bg-[#68736B] shrink-0" />
-            )}
-            <div>
-              <div className="font-heading font-bold text-xs uppercase tracking-wider text-[#68736B]">
-                Google OAuth
-              </div>
-              <div className="text-sm font-heading font-semibold text-[#1D1E18] mt-0.5">
-                {status.is_connected ? 'Connected' : 'Disconnected'}
-              </div>
-              <p className="text-xs text-[#68736B] mt-0.5">
-                {status.is_connected 
-                  ? status.email ? `Connected to ${status.email}` : 'Google OAuth credentials active.'
-                  : 'Google OAuth credentials are not configured.'}
-              </p>
-            </div>
-          </div>
 
-          {!status.is_connected && status.auth_url_available && (
-            <button
-              onClick={handleConnectOAuth}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] text-white rounded-[10px] transition-colors w-full sm:w-auto shrink-0 shadow-sm"
-            >
-              Connect Google OAuth
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* NOTIFICATIONS / FEEDBACK ALERTS */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-[#C94A4A]/30 rounded-[12px] text-[#C94A4A] text-sm flex items-center gap-3 animate-fadeIn">
-          <AlertTriangle className="w-5 h-5 text-[#C94A4A] shrink-0" />
-          <span className="font-medium">{error}</span>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-[#EAF4EE] border border-[#AAD2BA] rounded-[12px] text-[#2F7D4A] text-sm flex items-center gap-3 animate-fadeIn">
-          <CheckCircle2 className="w-5 h-5 text-[#2F7D4A] shrink-0" />
-          <span className="font-medium">{successMsg}</span>
-        </div>
-      )}
 
       {/* ================================================== */}
       {/* 3. BUSINESS SEARCH SECTION (CORE SEARCH EXPERIENCE) */}
@@ -530,7 +492,13 @@ export const GoogleBusinessView: React.FC = () => {
             </div>
             <div>
               <div className="text-[11px] font-heading font-bold uppercase tracking-wider text-[#68736B]">Businesses Found</div>
-              <div className="text-2xl font-heading font-bold text-[#1D1E18] mt-0.5">{businessesFound}</div>
+              <div className="text-2xl font-heading font-bold text-[#1D1E18] mt-0.5">
+                {isSearching ? (
+                  <span className="text-[#68736B] animate-pulse">--</span>
+                ) : (
+                  businessesFound
+                )}
+              </div>
             </div>
           </div>
 
@@ -572,37 +540,56 @@ export const GoogleBusinessView: React.FC = () => {
                   </span>
                 )}
               </div>
-              <button
-                onClick={handleExportSearchCsv}
-                disabled={exporting}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white transition-colors shadow-sm"
-              >
-                {exporting ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                ) : (
-                  <FileSpreadsheet className="w-4 h-4 text-white" />
-                )}
-                <span>
-                  {selectedResultIds.length > 0 
-                    ? `Export Selected (${selectedResultIds.length}) CSV` 
-                    : 'Export Search CSV'}
-                </span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={handleSaveSelected}
+                  disabled={savingBatch || searchResults.length === 0}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {savingBatch ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  ) : (
+                    <PlusCircle className="w-4 h-4 text-white" />
+                  )}
+                  <span>
+                    {selectedResultIds.length > 0 
+                      ? `Save Selected (${selectedResultIds.length}) to Locations` 
+                      : `Save All (${searchResults.length}) to Locations`}
+                  </span>
+                </button>
+
+                <button
+                  onClick={handleExportSearchCsv}
+                  disabled={exporting}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border border-[#DDE5DE] transition-colors shadow-2xs"
+                >
+                  {exporting ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-[#6B8F71]" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4 text-[#6B8F71]" />
+                  )}
+                  <span>
+                    {selectedResultIds.length > 0 
+                      ? `Export Selected (${selectedResultIds.length}) CSV` 
+                      : 'Export Search CSV'}
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Results Table — professionally styled with fixed column widths and truncation */}
             <div className="table-responsive rounded-[12px] border border-[#DDE5DE] bg-white shadow-sm overflow-x-auto">
-              <table className="w-full table-fixed min-w-[980px] text-left text-xs text-[#1D1E18]">
+              <table className="w-full table-fixed min-w-[1020px] text-left text-xs text-[#1D1E18]">
                 <colgroup>
                   <col className="w-[50px]" />
                   <col className="w-[200px]" />
                   <col className="w-[120px]" />
                   <col className="w-[120px]" />
-                  <col className="w-[160px]" />
-                  <col className="w-[90px]" />
+                  <col className="w-[150px]" />
+                  <col className="w-[85px]" />
                   <col className="w-[80px]" />
-                  <col className="w-[130px]" />
-                  <col className="w-[90px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[160px]" />
                 </colgroup>
                 <thead className="sticky top-0 bg-[#F6F8F5] uppercase tracking-wider text-[#68736B] border-b border-[#DDE5DE] font-heading font-bold z-10">
                   <tr>
@@ -628,6 +615,7 @@ export const GoogleBusinessView: React.FC = () => {
                 <tbody className="divide-y divide-[#DDE5DE]">
                   {searchResults.map((biz) => {
                     const isSelected = selectedResultIds.includes(biz.id);
+                    const isSaved = isBusinessSaved(biz);
                     return (
                       <tr 
                         key={biz.id} 
@@ -642,7 +630,14 @@ export const GoogleBusinessView: React.FC = () => {
                           />
                         </td>
                         <td className="px-4 py-3.5 font-bold text-[#1D1E18] truncate whitespace-nowrap" title={biz.business_name}>
-                          {biz.business_name || 'Not available'}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="truncate">{biz.business_name || 'Not available'}</span>
+                            {isSaved && (
+                              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA]">
+                                SAVED
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3.5 text-[#1D1E18] truncate whitespace-nowrap" title={biz.area || 'Not available'}>
                           {biz.area || 'Not available'}
@@ -672,13 +667,39 @@ export const GoogleBusinessView: React.FC = () => {
                           {biz.phone || 'Not available'}
                         </td>
                         <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                          <button
-                            onClick={() => setSelectedBusiness(biz)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border border-[#DDE5DE] transition-colors shadow-2xs text-xs font-medium"
-                          >
-                            <Info className="w-3.5 h-3.5 text-[#6B8F71] shrink-0" />
-                            <span>Details</span>
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            {isSaved ? (
+                              <span 
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[8px] bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA] text-xs font-semibold"
+                                title="Saved in database"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Saved</span>
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleSaveSingle(biz)}
+                                disabled={savingId === biz.id}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[8px] bg-white hover:bg-[#EAF4EE] hover:text-[#2F7D4A] hover:border-[#AAD2BA] text-[#1D1E18] border border-[#DDE5DE] transition-colors shadow-2xs text-xs font-medium disabled:opacity-50"
+                                title="Save to Database"
+                              >
+                                {savingId === biz.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6B8F71]" />
+                                ) : (
+                                  <PlusCircle className="w-3.5 h-3.5 text-[#6B8F71]" />
+                                )}
+                                <span>Save</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleOpenDetails(biz)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border border-[#DDE5DE] transition-colors shadow-2xs text-xs font-medium"
+                            >
+                              <Info className="w-3.5 h-3.5 text-[#6B8F71] shrink-0" />
+                              <span>Details</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -698,250 +719,7 @@ export const GoogleBusinessView: React.FC = () => {
         ) : null}
       </div>
 
-      {/* 4. LOCATIONS ACTION CONTROLS AREA */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 bg-white p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] shadow-sm">
-        <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2 sm:gap-3">
-          <div className="text-sm font-heading font-semibold text-[#1D1E18]">
-            Saved Locations ({locations.length})
-          </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-heading font-semibold bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border border-[#DDE5DE] transition-colors shadow-2xs"
-          >
-            <PlusCircle className="w-3.5 h-3.5 text-[#6B8F71]" />
-            Add Location
-          </button>
-        </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-          <button
-            onClick={handleSync}
-            disabled={syncing || loading}
-            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold transition-all shadow-sm ${
-              syncing || loading 
-                ? 'bg-[#68736B]/40 text-white cursor-not-allowed' 
-                : 'bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing...' : 'Sync Businesses'}
-          </button>
-
-          <button
-            onClick={handleExportCsv}
-            disabled={exporting || loading || locations.length === 0}
-            className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-[10px] text-xs font-heading font-semibold border transition-all ${
-              exporting || loading || locations.length === 0
-                ? 'bg-[#F6F8F5] border-[#DDE5DE] text-[#68736B]/50 cursor-not-allowed'
-                : 'bg-white hover:bg-[#F6F8F5] text-[#1D1E18] border-[#DDE5DE] shadow-2xs'
-            }`}
-          >
-            {exporting ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6B8F71]" />
-            ) : (
-              <Download className="w-3.5 h-3.5 text-[#6B8F71]" />
-            )}
-            {exporting ? 'Exporting...' : 'Export Saved CSV'}
-          </button>
-        </div>
-      </div>
-
-      {/* 5. EXISTING LOCATIONS DATA TABLE */}
-      <div className="bg-white rounded-[16px] overflow-hidden border border-[#DDE5DE] shadow-sm p-4 sm:p-6 space-y-4">
-        {loading ? (
-          <div className="p-8 sm:p-12 text-center text-[#68736B] space-y-3">
-            <Loader2 className="w-8 h-8 animate-spin text-[#6B8F71] mx-auto" />
-            <p className="text-sm font-heading font-medium text-[#1D1E18]">Loading Google Business Profile locations...</p>
-          </div>
-        ) : locations.length === 0 ? (
-          <div className="p-8 sm:p-12 text-center space-y-2">
-            <Building2 className="w-12 h-12 text-[#68736B]/40 mx-auto stroke-1" />
-            <h4 className="text-base font-heading font-semibold text-[#1D1E18]">No Google Business Profile locations found</h4>
-            <p className="text-[#68736B] text-sm">
-              Click <strong className="text-[#6B8F71]">Sync Businesses</strong> to retrieve locations from Google API.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="table-responsive rounded-[12px] border border-[#DDE5DE]">
-              <table className="w-full min-w-[420px] text-left text-xs sm:text-sm text-[#1D1E18]">
-                <thead className="bg-[#F6F8F5] text-xs uppercase tracking-wider text-[#68736B] border-b border-[#DDE5DE] font-heading font-bold">
-                  <tr>
-                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18]">BUSINESS NAME</th>
-                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18]">AREA</th>
-                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18]">CITY</th>
-                    <th scope="col" className="px-4 sm:px-6 py-3.5 font-heading font-bold text-[#1D1E18] text-right">ACTION</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#DDE5DE] bg-white">
-                  {paginatedLocations.map((loc) => (
-                    <tr 
-                      key={loc.id}
-                      className="hover:bg-[#F6F8F5]/60 transition-colors"
-                    >
-                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 font-bold text-[#1D1E18] break-words">
-                        {loc.business_name}
-                      </td>
-                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 text-[#1D1E18]">
-                        {loc.area || ''}
-                      </td>
-                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 text-[#1D1E18]">
-                        {loc.city || ''}
-                      </td>
-                      <td className="px-4 sm:px-6 py-3.5 sm:py-4 text-right">
-                        <button
-                          onClick={() => handleDeleteLocation(loc.id, loc.business_name)}
-                          disabled={deletingId === loc.id}
-                          className="p-1.5 text-[#68736B] hover:text-[#C94A4A] hover:bg-red-50 rounded-[8px] transition-colors"
-                          title="Delete location record"
-                        >
-                          {deletingId === loc.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin text-[#C94A4A]" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* PAGINATION CONTROLS */}
-            {totalPages > 1 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 py-2 text-xs text-[#68736B]">
-                <div className="text-center sm:text-left">
-                  Showing {startIndex + 1} to {Math.min(startIndex + pageSize, totalItems)} of {totalItems} results
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-1.5">
-                  <button
-                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className={`p-1.5 rounded-[8px] border transition-colors ${
-                      currentPage === 1
-                        ? 'border-[#DDE5DE] text-[#68736B]/40 cursor-not-allowed'
-                        : 'border-[#DDE5DE] bg-white text-[#1D1E18] hover:bg-[#F6F8F5]'
-                    }`}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`px-3 py-1 rounded-[8px] text-xs font-heading font-semibold transition-colors ${
-                        currentPage === page
-                          ? 'bg-[#6B8F71] text-white shadow-sm'
-                          : 'bg-white text-[#1D1E18] hover:bg-[#F6F8F5] border border-[#DDE5DE]'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
-
-                  <button
-                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                    className={`p-1.5 rounded-[8px] border transition-colors ${
-                      currentPage === totalPages
-                        ? 'border-[#DDE5DE] text-[#68736B]/40 cursor-not-allowed'
-                        : 'border-[#DDE5DE] bg-white text-[#1D1E18] hover:bg-[#F6F8F5]'
-                    }`}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ADD LOCATION MODAL (20px radius) */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-[#1D1E18]/40 backdrop-blur-xs flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="modal-safe bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-md p-4 sm:p-6 space-y-4 shadow-2xl animate-fadeIn my-4 sm:my-auto">
-            <div className="flex items-center justify-between border-b border-[#DDE5DE] pb-3">
-              <h3 className="text-base font-heading font-bold text-[#1D1E18] flex items-center gap-2">
-                <PlusCircle className="w-5 h-5 text-[#6B8F71]" />
-                Add Business Profile Location
-              </h3>
-              <button 
-                onClick={() => setShowAddModal(false)} 
-                className="text-[#68736B] hover:text-[#1D1E18] p-1 rounded-[6px]"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddLocation} className="space-y-3">
-              <div>
-                <label className="block text-xs font-heading font-semibold text-[#1D1E18] mb-1">Business Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={newBiz.business_name}
-                  onChange={(e) => setNewBiz({ ...newBiz, business_name: e.target.value })}
-                  placeholder="e.g. KFC Velachery"
-                  className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] px-3 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71]"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-heading font-semibold text-[#1D1E18] mb-1">Area</label>
-                  <input
-                    type="text"
-                    value={newBiz.area}
-                    onChange={(e) => setNewBiz({ ...newBiz, area: e.target.value })}
-                    placeholder="e.g. Velachery"
-                    className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] px-3 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-heading font-semibold text-[#1D1E18] mb-1">City</label>
-                  <input
-                    type="text"
-                    value={newBiz.city}
-                    onChange={(e) => setNewBiz({ ...newBiz, city: e.target.value })}
-                    placeholder="e.g. Chennai"
-                    className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] px-3 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71]"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-heading font-semibold text-[#1D1E18] mb-1">Address</label>
-                <input
-                  type="text"
-                  value={newBiz.address}
-                  onChange={(e) => setNewBiz({ ...newBiz, address: e.target.value })}
-                  placeholder="e.g. 100 Feet Rd, Velachery"
-                  className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] px-3 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71]"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-xs font-heading font-semibold text-[#68736B] hover:text-[#1D1E18]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 text-xs font-heading font-semibold bg-[#6B8F71] hover:bg-[#597A5F] text-white rounded-[10px] transition-colors shadow-sm"
-                >
-                  Save Record
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* FULL 58-FIELD BUSINESS DETAILS MODAL (20px radius) */}
       {selectedBusiness && (
@@ -949,11 +727,17 @@ export const GoogleBusinessView: React.FC = () => {
           <div className="modal-safe bg-white border border-[#DDE5DE] rounded-[20px] w-full max-w-4xl p-4 sm:p-6 md:p-8 space-y-5 sm:space-y-6 shadow-2xl my-4 sm:my-8">
             <div className="flex items-start justify-between border-b border-[#DDE5DE] pb-4 gap-3">
               <div>
-                <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#6B8F71] uppercase tracking-wider mb-1">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-heading font-semibold text-[#6B8F71] uppercase tracking-wider mb-1">
                   <span>{selectedBusiness.source_type || 'Google Business'}</span>
                   {selectedBusiness.enrichment_status && (
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA]">
                       {selectedBusiness.enrichment_status}
+                    </span>
+                  )}
+                  {isEnriching && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA]">
+                      <Loader2 className="w-3 h-3 animate-spin text-[#2F7D4A]" />
+                      Updating live details...
                     </span>
                   )}
                 </div>
@@ -973,10 +757,10 @@ export const GoogleBusinessView: React.FC = () => {
             </div>
 
             {/* Core Info Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
               <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
                 <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Category</div>
-                <div className="text-sm font-semibold text-[#1D1E18]">{selectedBusiness.primary_category || 'N/A'}</div>
+                <div className="text-sm font-semibold text-[#1D1E18]">{selectedBusiness.primary_category || 'NA'}</div>
               </div>
               <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
                 <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Rating & Reviews</div>
@@ -986,7 +770,7 @@ export const GoogleBusinessView: React.FC = () => {
                       <Star className="w-4 h-4 fill-[#B7791F] text-[#B7791F]" />
                       <span>{selectedBusiness.rating}</span>
                     </>
-                  ) : 'N/A'}
+                  ) : <span className="text-[#68736B]">NA</span>}
                   {selectedBusiness.review_count && (
                     <span className="text-xs text-[#68736B] font-normal">({selectedBusiness.review_count} reviews)</span>
                   )}
@@ -994,26 +778,20 @@ export const GoogleBusinessView: React.FC = () => {
               </div>
               <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
                 <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Primary Phone</div>
-                <div className="text-sm font-semibold text-[#1D1E18] font-mono">{selectedBusiness.phone || 'N/A'}</div>
-              </div>
-              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
-                <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Landline Phone</div>
-                <div className="text-sm font-semibold text-[#6B8F71] font-mono">{selectedBusiness.phone_landline || 'N/A'}</div>
+                <div className="text-sm font-semibold text-[#1D1E18] font-mono">{selectedBusiness.phone || 'NA'}</div>
               </div>
             </div>
 
-            {/* About & Description */}
-            {(selectedBusiness.about_us || selectedBusiness.description) && (
-              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-1.5">
-                <div className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5" />
-                  About / Description
-                </div>
-                <p className="text-xs sm:text-sm text-[#1D1E18] leading-relaxed whitespace-pre-line">
-                  {selectedBusiness.about_us || selectedBusiness.description}
-                </p>
+            {/* About & Description — always shown */}
+            <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-1.5">
+              <div className="text-xs font-heading font-bold text-[#6B8F71] uppercase tracking-wider flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5" />
+                About / Description
               </div>
-            )}
+              <p className="text-xs sm:text-sm text-[#1D1E18] leading-relaxed whitespace-pre-line">
+                {selectedBusiness.about_us || selectedBusiness.description || 'NA'}
+              </p>
+            </div>
 
             {/* Location & Address Breakdown */}
             <div className="space-y-3">
@@ -1022,36 +800,221 @@ export const GoogleBusinessView: React.FC = () => {
                 Address & Geographic Coordinates
               </h4>
               <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE] space-y-3">
+                {/* Full Address — single clean line */}
                 <div>
                   <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Full Address</div>
-                  <div className="text-sm font-medium text-[#1D1E18] break-words">{selectedBusiness.address || 'N/A'}</div>
+                  <div className="text-sm font-medium text-[#1D1E18] break-words">
+                    {selectedBusiness.address || 'NA'}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs pt-2 border-t border-[#DDE5DE]">
+                {/* Address breakdown grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 text-xs pt-2 border-t border-[#DDE5DE]">
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Address Line 1</span>
+                    <span className="text-[#1D1E18] font-semibold break-words">{selectedBusiness.address_line_1 || 'NA'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Address Line 2</span>
+                    <span className="text-[#1D1E18] font-semibold break-words">{selectedBusiness.address_line_2 || 'NA'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Neighborhood</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.neighborhood || 'NA'}</span>
+                  </div>
                   <div>
                     <span className="text-[#68736B] block text-[10px] uppercase font-bold">Area / Locality</span>
-                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.area || 'N/A'}</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.area || 'NA'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">District</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.district || 'NA'}</span>
                   </div>
                   <div>
                     <span className="text-[#68736B] block text-[10px] uppercase font-bold">City</span>
-                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.city || 'N/A'}</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.city || 'NA'}</span>
                   </div>
                   <div>
                     <span className="text-[#68736B] block text-[10px] uppercase font-bold">State</span>
-                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.state || 'N/A'}</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.state || 'NA'}</span>
                   </div>
                   <div>
                     <span className="text-[#68736B] block text-[10px] uppercase font-bold">Postal Code</span>
-                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.postal_code || 'N/A'}</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.postal_code || 'NA'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Country</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.country || 'NA'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Plus Code</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.plus_code || 'NA'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Latitude</span>
+                    <span className="text-[#1D1E18] font-semibold font-mono">{selectedBusiness.latitude || 'NA'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Longitude</span>
+                    <span className="text-[#1D1E18] font-semibold font-mono">{selectedBusiness.longitude || 'NA'}</span>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                {(selectedBusiness.latitude || selectedBusiness.longitude) && (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs pt-2 border-t border-[#DDE5DE] font-mono text-[#68736B]">
-                    <span>Latitude: {selectedBusiness.latitude || 'N/A'}</span>
-                    <span>Longitude: {selectedBusiness.longitude || 'N/A'}</span>
+            {/* Business Status & Attributes */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-heading font-bold text-[#68736B] uppercase tracking-wider">Business Status & Attributes</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Status</div>
+                  <div className="text-xs font-semibold text-[#1D1E18]">{selectedBusiness.business_status || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Open Now</div>
+                  <div className="text-xs font-semibold text-[#1D1E18]">{selectedBusiness.open_now || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Price Level</div>
+                  <div className="text-xs font-semibold text-[#1D1E18]">{selectedBusiness.price_level || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Additional Categories</div>
+                  <div className="text-xs font-semibold text-[#1D1E18] break-words">{selectedBusiness.additional_categories || 'NA'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Contact Details */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-heading font-bold text-[#68736B] uppercase tracking-wider">Contact Details</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Primary Phone</div>
+                  <div className="text-xs font-semibold text-[#1D1E18] font-mono">{selectedBusiness.phone || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Secondary Phone</div>
+                  <div className="text-xs font-semibold text-[#1D1E18] font-mono">{selectedBusiness.secondary_phone || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Landline Phone</div>
+                  <div className="text-xs font-semibold text-[#1D1E18] font-mono">{selectedBusiness.phone_landline || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Mobile Phone</div>
+                  <div className="text-xs font-semibold text-[#1D1E18] font-mono">{selectedBusiness.phone_mobile || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Email</div>
+                  <div className="text-xs font-semibold text-[#1D1E18] break-all">{selectedBusiness.email || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Website</div>
+                  {selectedBusiness.website ? (
+                    <a href={selectedBusiness.website} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#6B8F71] underline break-all">{selectedBusiness.website}</a>
+                  ) : (
+                    <div className="text-xs font-semibold text-[#1D1E18]">NA</div>
+                  )}
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Google Maps URL</div>
+                  {selectedBusiness.google_maps_url ? (
+                    <a href={selectedBusiness.google_maps_url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#6B8F71] underline break-all">View on Maps</a>
+                  ) : (
+                    <div className="text-xs font-semibold text-[#1D1E18]">NA</div>
+                  )}
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Google Place ID</div>
+                  <div className="text-xs font-semibold text-[#1D1E18] break-all">{selectedBusiness.google_place_id || 'NA'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Opening Hours */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-heading font-bold text-[#68736B] uppercase tracking-wider">Opening Hours</h4>
+              <div className="bg-[#F6F8F5] p-3.5 sm:p-4 rounded-[12px] border border-[#DDE5DE]">
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 text-xs">
+                  {[
+                    { label: 'Monday', value: selectedBusiness.monday_hours },
+                    { label: 'Tuesday', value: selectedBusiness.tuesday_hours },
+                    { label: 'Wednesday', value: selectedBusiness.wednesday_hours },
+                    { label: 'Thursday', value: selectedBusiness.thursday_hours },
+                    { label: 'Friday', value: selectedBusiness.friday_hours },
+                    { label: 'Saturday', value: selectedBusiness.saturday_hours },
+                    { label: 'Sunday', value: selectedBusiness.sunday_hours },
+                  ].map(({ label, value }) => (
+                    <div key={label}>
+                      <span className="text-[#68736B] block text-[10px] uppercase font-bold">{label}</span>
+                      <span className="text-[#1D1E18] font-semibold">{value || 'NA'}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 pt-3 border-t border-[#DDE5DE] grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Today's Status</span>
+                    <span className="text-[#1D1E18] font-semibold">{selectedBusiness.today_open_status || 'NA'}</span>
                   </div>
-                )}
+                  <div>
+                    <span className="text-[#68736B] block text-[10px] uppercase font-bold">Opening Hours (General)</span>
+                    <span className="text-[#1D1E18] font-semibold whitespace-pre-line">{selectedBusiness.opening_hours || 'NA'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Services & Amenities */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-heading font-bold text-[#68736B] uppercase tracking-wider">Services, Amenities & Options</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="bg-[#F6F8F5] p-3.5 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Services</div>
+                  <div className="text-[#1D1E18] whitespace-pre-line">{selectedBusiness.services || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3.5 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Amenities</div>
+                  <div className="text-[#1D1E18] whitespace-pre-line">{selectedBusiness.amenities || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3.5 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Accessibility</div>
+                  <div className="text-[#1D1E18] whitespace-pre-line">{selectedBusiness.accessibility || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3.5 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-1">Payment Options</div>
+                  <div className="text-[#1D1E18] whitespace-pre-line">{selectedBusiness.payment_options || 'NA'}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Delivery</div>
+                  <div className="text-xs font-semibold text-[#1D1E18]">{selectedBusiness.delivery || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Dine In</div>
+                  <div className="text-xs font-semibold text-[#1D1E18]">{selectedBusiness.dine_in || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Pickup</div>
+                  <div className="text-xs font-semibold text-[#1D1E18]">{selectedBusiness.pickup || 'NA'}</div>
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Reservation URL</div>
+                  {selectedBusiness.reservation_url ? (
+                    <a href={selectedBusiness.reservation_url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#6B8F71] underline">Book Now</a>
+                  ) : (
+                    <div className="text-xs font-semibold text-[#1D1E18]">NA</div>
+                  )}
+                </div>
+                <div className="bg-[#F6F8F5] p-3 rounded-[10px] border border-[#DDE5DE]">
+                  <div className="text-[10px] font-heading font-bold text-[#68736B] uppercase tracking-wider mb-0.5">Menu URL</div>
+                  {selectedBusiness.menu_url ? (
+                    <a href={selectedBusiness.menu_url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#6B8F71] underline">View Menu</a>
+                  ) : (
+                    <div className="text-xs font-semibold text-[#1D1E18]">NA</div>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -28,6 +28,7 @@ import {
   BulkScrapeResponse 
 } from '../services/scraperApi';
 import { exportScrapedBusinessesCsv } from '../utils';
+import { useToast } from '../context';
 
 export const WebsiteScraperView: React.FC = () => {
   // Database History State
@@ -44,9 +45,34 @@ export const WebsiteScraperView: React.FC = () => {
   const [exporting, setExporting] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   
-  const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const toast = useToast();
+  const setError = React.useCallback((msg: string | null) => {
+    if (msg) toast.error(msg);
+  }, [toast]);
+  const setSuccessMsg = React.useCallback((msg: string | null) => {
+    if (msg) toast.success(msg);
+  }, [toast]);
   const [selectedBusiness, setSelectedBusiness] = useState<ScrapedBusiness | null>(null);
+  const [isEnriching, setIsEnriching] = useState<boolean>(false);
+
+  const handleOpenDetails = async (biz: ScrapedBusiness) => {
+    setSelectedBusiness(biz);
+    if (biz.google_maps_url && (!biz.monday_hours || !biz.services)) {
+      setIsEnriching(true);
+      try {
+        const enriched = await scraperApi.enrichBusiness(biz.id);
+        if (enriched) {
+          setSelectedBusiness(prev => (prev && prev.id === biz.id ? enriched : prev));
+          setHistoryBusinesses(prev => prev.map(item => item.id === biz.id ? enriched : item));
+          setCurrentOperationResults(prev => prev.map(item => item.id === biz.id ? enriched : item));
+        }
+      } catch (err) {
+        console.warn('Place enrichment notice:', err);
+      } finally {
+        setIsEnriching(false);
+      }
+    }
+  };
 
   // Single Scrape Form state
   const [singleUrl, setSingleUrl] = useState<string>('');
@@ -458,21 +484,6 @@ export const WebsiteScraperView: React.FC = () => {
         </div>
       )}
 
-      {/* NOTIFICATIONS / FEEDBACK ALERTS */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-[#C94A4A]/30 rounded-[12px] text-[#C94A4A] text-sm flex items-start gap-3 animate-fadeIn">
-          <AlertTriangle className="w-5 h-5 text-[#C94A4A] shrink-0 mt-0.5" />
-          <span className="font-medium break-words min-w-0">{error}</span>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-[#EAF4EE] border border-[#AAD2BA] rounded-[12px] text-[#2F7D4A] text-sm flex items-start gap-3 animate-fadeIn">
-          <CheckCircle2 className="w-5 h-5 text-[#2F7D4A] shrink-0 mt-0.5" />
-          <span className="font-medium break-words min-w-0">{successMsg}</span>
-        </div>
-      )}
-
       {/* SCRAPING RESULTS CARD */}
       <div className="bg-white rounded-[16px] border border-[#DDE5DE] shadow-sm overflow-hidden space-y-4 p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 border-b border-[#DDE5DE] pb-4">
@@ -653,7 +664,7 @@ export const WebsiteScraperView: React.FC = () => {
                         <td className="px-4 sm:px-5 py-3.5 sm:py-4 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => setSelectedBusiness(biz)}
+                              onClick={() => handleOpenDetails(biz)}
                               className="p-1.5 text-[#6B8F71] hover:text-[#597A5F] hover:bg-[#EAF4EE] rounded-[8px] transition-colors font-medium text-xs flex items-center gap-1"
                               title="View complete business details"
                             >
@@ -747,6 +758,12 @@ export const WebsiteScraperView: React.FC = () => {
                   {selectedBusiness.enrichment_status === 'MATCHED' && (
                     <span className="px-2 py-0.5 text-xs font-bold bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA] rounded-md">
                       Google Maps Enriched
+                    </span>
+                  )}
+                  {isEnriching && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-bold bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA] rounded-md">
+                      <Loader2 className="w-3 h-3 animate-spin text-[#2F7D4A]" />
+                      Updating live details...
                     </span>
                   )}
                 </div>

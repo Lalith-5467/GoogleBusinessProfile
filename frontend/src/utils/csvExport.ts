@@ -158,9 +158,32 @@ export function exportScrapedBusinessesCsv(businesses: ScrapedBusiness[], filena
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+  const cleanFilename = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+  a.download = cleanFilename;
   document.body.appendChild(a);
   a.click();
   window.URL.revokeObjectURL(url);
   document.body.removeChild(a);
+
+  // Authoritative real-time sync with MySQL export_logs
+  try {
+    const rawUrl = (import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE || '';
+    const API_BASE = String(rawUrl).replace(/\/+$/, '');
+    fetch(`${API_BASE}/api/admin/exports/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        export_type: cleanFilename.toLowerCase().includes('search') ? 'SEARCH_FILTERED' : 'SCRAPER',
+        record_count: businesses.length,
+        file_name: cleanFilename,
+        file_format: 'CSV'
+      })
+    }).catch(err => {
+      console.warn('Export log recording notice:', err);
+    });
+  } catch (e) {
+    // Non-blocking
+  }
 }
+
+
