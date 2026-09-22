@@ -6,9 +6,7 @@ import {
   AlertCircle,
   FileCode,
   User,
-  Activity,
-  ChevronDown,
-  ChevronUp
+  Activity
 } from 'lucide-react';
 import { AuditLogItem } from '../types';
 import { superAdminApi } from '../services/superAdminApi';
@@ -20,8 +18,6 @@ export function SuperAdminAuditLogsView() {
   const [actorFilter, setActorFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
-
-  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -133,99 +129,62 @@ export function SuperAdminAuditLogsView() {
                 <th className="py-3 px-4">Target Type</th>
                 <th className="py-3 px-4">IP Address</th>
                 <th className="py-3 px-4">Timestamp</th>
-                <th className="py-3 px-4 text-right">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#DDE5DE]/60">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-[#68736B]">
+                  <td colSpan={5} className="py-12 text-center text-[#68736B]">
                     <div className="w-6 h-6 border-2 border-[#6B8F71] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
                     Loading audit trail...
                   </td>
                 </tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-[#68736B]">
+                  <td colSpan={5} className="py-12 text-center text-[#68736B]">
                     No audit records matching the search criteria.
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => {
-                  const isExpanded = expandedLogId === log.id;
-                  let parsedDetails: any = null;
-                  try {
-                    if (log.details_json) {
-                      parsedDetails = JSON.parse(log.details_json);
-                    }
-                  } catch {}
+                logs.map((log) => (
+                  <tr key={log.id} className="hover:bg-[#F6F8F5]/60 transition-colors">
+                    <td className="py-3 px-4 font-mono font-bold text-[#1D1E18]">
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[11px] ${
+                          log.action.includes('DELETE')
+                            ? 'bg-red-50 text-[#C94A4A]'
+                            : log.action.includes('LOGIN')
+                            ? 'bg-blue-50 text-blue-700'
+                            : 'bg-[#EAF4EE] text-[#2F7D4A]'
+                        }`}
+                      >
+                        {log.action}
+                      </span>
+                    </td>
 
-                  return (
-                    <React.Fragment key={log.id}>
-                      <tr className="hover:bg-[#F6F8F5]/60 transition-colors">
-                        <td className="py-3 px-4 font-mono font-bold text-[#1D1E18]">
-                          <span
-                            className={`px-2 py-0.5 rounded-md text-[11px] ${
-                              log.action.includes('DELETE')
-                                ? 'bg-red-50 text-[#C94A4A]'
-                                : log.action.includes('LOGIN')
-                                ? 'bg-blue-50 text-blue-700'
-                                : 'bg-[#EAF4EE] text-[#2F7D4A]'
-                            }`}
-                          >
-                            {log.action}
-                          </span>
-                        </td>
+                    <td className="py-3 px-4">
+                      <span className="font-semibold text-[#1D1E18]">{log.actor_email}</span>
+                    </td>
 
-                        <td className="py-3 px-4">
-                          <span className="font-semibold text-[#1D1E18]">{log.actor_email}</span>
-                        </td>
-
-                        <td className="py-3 px-4 text-[#68736B]">
-                          {log.target_type ? (
-                            <span className="px-2 py-0.5 rounded bg-gray-100 font-mono text-[10px] text-gray-700">
-                              {log.target_type}
-                            </span>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-
-                        <td className="py-3 px-4 font-mono text-[11px] text-[#68736B]">
-                          {log.ip_address || '—'}
-                        </td>
-
-                        <td className="py-3 px-4 text-[#68736B] text-[11px]">
-                          {new Date(log.created_at).toLocaleString()}
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          {parsedDetails ? (
-                            <button
-                              onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6B8F71] hover:underline"
-                            >
-                              <span>{isExpanded ? 'Hide' : 'Inspect'}</span>
-                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-[#68736B]">—</span>
-                          )}
-                        </td>
-                      </tr>
-
-                      {isExpanded && parsedDetails && (
-                        <tr className="bg-[#F6F8F5]/80">
-                          <td colSpan={6} className="py-3 px-6">
-                            <div className="p-3 bg-white border border-[#DDE5DE] rounded-[10px] text-xs font-mono text-[#1D1E18] overflow-x-auto">
-                              <pre>{JSON.stringify(parsedDetails, null, 2)}</pre>
-                            </div>
-                          </td>
-                        </tr>
+                    <td className="py-3 px-4 text-[#68736B]">
+                      {log.target_type ? (
+                        <span className="px-2 py-0.5 rounded bg-gray-100 font-mono text-[10px] text-gray-700">
+                          {log.target_type}
+                        </span>
+                      ) : (
+                        '—'
                       )}
-                    </React.Fragment>
-                  );
-                })
+                    </td>
+
+                    <td className="py-3 px-4 font-mono text-[11px] text-[#68736B]">
+                      {log.ip_address || '—'}
+                    </td>
+
+                    <td className="py-3 px-4 text-[#68736B] text-[11px]">
+                      {new Date(log.created_at).toLocaleString()}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

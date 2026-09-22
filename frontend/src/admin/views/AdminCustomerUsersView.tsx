@@ -220,7 +220,7 @@ export function AdminCustomerUsersView() {
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-xs font-semibold text-[#6B8F71] hover:bg-[#EAF4EE] border border-[#AAD2BA] transition-colors cursor-pointer"
                       >
                         <Eye className="w-3 h-3" />
-                        <span>Inspect</span>
+                        <span>View Details</span>
                       </button>
                     </td>
                   </tr>
