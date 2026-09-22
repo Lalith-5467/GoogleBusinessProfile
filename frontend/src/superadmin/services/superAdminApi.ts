@@ -12,12 +12,17 @@ import {
 } from '../types';
 import { API_CONFIG } from '../../config/api.config';
 
-const TOKEN_KEY = 'gbp_operations_admin_access_token';
+const TOKEN_KEY = 'gbp_superadmin_access_token';
 
-export const adminTokenStorage = {
+export const superAdminTokenStorage = {
   get: (): string | null => {
     try {
-      return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
+      return (
+        sessionStorage.getItem(TOKEN_KEY) ||
+        localStorage.getItem(TOKEN_KEY) ||
+        sessionStorage.getItem('gbp_admin_access_token') ||
+        localStorage.getItem('gbp_admin_access_token')
+      );
     } catch {
       return null;
     }
@@ -32,6 +37,8 @@ export const adminTokenStorage = {
     try {
       sessionStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem('gbp_admin_access_token');
+      localStorage.removeItem('gbp_admin_access_token');
     } catch {}
   },
 };
@@ -41,7 +48,7 @@ const getBaseUrl = (): string => {
 };
 
 const authFetch = async (endpoint: string, options: RequestInit = {}): Promise<Response> => {
-  const token = adminTokenStorage.get();
+  const token = superAdminTokenStorage.get();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
@@ -55,7 +62,7 @@ const authFetch = async (endpoint: string, options: RequestInit = {}): Promise<R
   return fetch(url, { ...options, headers });
 };
 
-export const adminApi = {
+export const superAdminApi = {
   // Auth
   login: async (credentials: { email: string; password: string }): Promise<{ access_token: string; user: UserProfile }> => {
     const res = await authFetch('/api/admin/auth/login', {
@@ -67,7 +74,7 @@ export const adminApi = {
       throw new Error(err.detail || 'Login failed');
     }
     const data = await res.json();
-    adminTokenStorage.set(data.access_token);
+    superAdminTokenStorage.set(data.access_token);
     return data;
   },
 
@@ -101,7 +108,7 @@ export const adminApi = {
       throw new Error(err.detail || 'Bootstrap failed');
     }
     const data = await res.json();
-    adminTokenStorage.set(data.access_token);
+    superAdminTokenStorage.set(data.access_token);
     return data;
   },
 
@@ -156,6 +163,8 @@ export const adminApi = {
     status?: string;
     plan_id?: string;
     password?: string;
+    current_password?: string;
+    confirm_password?: string;
   }): Promise<UserProfile> => {
     const res = await authFetch(`/api/admin/users/${userId}`, {
       method: 'PUT',

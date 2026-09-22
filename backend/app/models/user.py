@@ -19,6 +19,8 @@ class User(Base):
     role = Column(String(50), default="CUSTOMER", nullable=False)  # SUPER_ADMIN, ADMIN, CUSTOMER
     status = Column(String(50), default="ACTIVE", nullable=False)  # ACTIVE, INACTIVE, SUSPENDED
     plan_id = Column(String(191), nullable=True)
+    is_original_super_admin = Column(Boolean, default=False, nullable=False)
+    created_by_id = Column(String(191), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

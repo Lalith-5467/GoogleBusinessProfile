@@ -17,14 +17,18 @@ import {
   RefreshCw,
   Mail,
   User as UserIcon,
-  Layers
+  Layers,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { UserListItem, UserRole, UserStatus, AdminPermission } from '../types';
-import { adminApi } from '../services/adminApi';
-import { useAdminAuth } from '../context/AdminAuthContext';
+import { superAdminApi } from '../services/superAdminApi';
+import { useSuperAdminAuth } from '../context/SuperAdminAuthContext';
+import { useToast } from '../../context';
 
-export function AdminUsersView() {
-  const { isSuperAdmin, currentUser } = useAdminAuth();
+export function SuperAdminUsersView() {
+  const { isSuperAdmin, isOriginalSuperAdmin, isViewOnlySuperAdmin, currentUser } = useSuperAdminAuth();
+  const toast = useToast();
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -39,6 +43,10 @@ export function AdminUsersView() {
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
+
+  const isSelf = !!currentUser && selectedUser?.id === currentUser?.id;
+  const isSubSuperAdmin = currentUser?.role === 'SUPER_ADMIN' && !currentUser?.is_original_super_admin;
+  const isSelfSubSuperAdmin = isSubSuperAdmin && isSelf;
 
   // Form states
   const [createEmail, setCreateEmail] = useState('');
@@ -58,7 +66,13 @@ export function AdminUsersView() {
   const [editFullName, setEditFullName] = useState('');
   const [editRole, setEditRole] = useState<UserRole>('CUSTOMER');
   const [editStatus, setEditStatus] = useState<UserStatus>('ACTIVE');
+  const [editCurrentPassword, setEditCurrentPassword] = useState('');
   const [editPassword, setEditPassword] = useState('');
+  const [editConfirmPassword, setEditConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
 
   const [editPermissions, setEditPermissions] = useState<AdminPermission>({
     can_manage_users: true,
@@ -76,7 +90,7 @@ export function AdminUsersView() {
     setLoading(true);
     setError(null);
     try {
-      const data = await adminApi.listUsers({
+      const data = await superAdminApi.listUsers({
         search: search || undefined,
         role: roleFilter || undefined,
         status: statusFilter || undefined,
@@ -105,7 +119,7 @@ export function AdminUsersView() {
     setActionLoading(true);
     setError(null);
     try {
-      await adminApi.createUser({
+      await superAdminApi.createUser({
         email: createEmail,
         password: createPassword,
         full_name: createFullName || undefined,
@@ -128,19 +142,82 @@ export function AdminUsersView() {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
+
+    const isSelf = !!currentUser && selectedUser.id === currentUser.id;
+    const isSubSuperAdmin = currentUser?.role === 'SUPER_ADMIN' && !currentUser?.is_original_super_admin;
+    const isSelfSubSuperAdmin = isSubSuperAdmin && isSelf;
+
+    const hasNewPassword = editPassword.trim().length > 0;
+    const hasCurrentPassword = editCurrentPassword.trim().length > 0;
+    const hasConfirmPassword = editConfirmPassword.trim().length > 0;
+    const isPasswordChangeInitiated = hasNewPassword || hasCurrentPassword || hasConfirmPassword;
+
+    if (isSelfSubSuperAdmin && isPasswordChangeInitiated) {
+      if (!hasCurrentPassword) {
+        toast.error('Please enter your current password.');
+        return;
+      }
+      if (!hasNewPassword) {
+        toast.error('Please enter a new password.');
+        return;
+      }
+      if (editCurrentPassword.trim() === editPassword.trim()) {
+        toast.error('New password must be different from your current password.');
+        return;
+      }
+      if (editPassword.trim().length < 8) {
+        toast.error('New password must be at least 8 characters long.');
+        return;
+      }
+      if (!hasConfirmPassword || editPassword.trim() !== editConfirmPassword.trim()) {
+        toast.error('New password and confirm password do not match.');
+        return;
+      }
+    } else if (hasNewPassword) {
+      if (editPassword.trim().length < 8) {
+        toast.error('New password must be at least 8 characters long.');
+        return;
+      }
+    }
+
     setActionLoading(true);
     setError(null);
     try {
-      await adminApi.updateUser(selectedUser.id, {
+      const payload: any = {
         full_name: editFullName,
         role: isSuperAdmin ? editRole : undefined,
         status: editStatus,
-        password: editPassword || undefined,
-      });
+      };
+
+      if (isSelfSubSuperAdmin) {
+        if (hasNewPassword) {
+          payload.password = editPassword.trim();
+          payload.current_password = editCurrentPassword.trim();
+          payload.confirm_password = editConfirmPassword.trim();
+        }
+      } else if (hasNewPassword) {
+        payload.password = editPassword.trim();
+      }
+
+      await superAdminApi.updateUser(selectedUser.id, payload);
+
+      if (isSelfSubSuperAdmin && hasNewPassword) {
+        toast.success('Password changed successfully.');
+      } else if (hasNewPassword) {
+        toast.success('Password reset successfully.');
+      } else {
+        toast.success('User updated successfully.');
+      }
+
       setShowEditModal(false);
+      setEditCurrentPassword('');
+      setEditPassword('');
+      setEditConfirmPassword('');
       fetchUsers();
     } catch (err: any) {
-      setError(err.message || 'Failed to update user account.');
+      const msg = err.message || 'Failed to update user account.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setActionLoading(false);
     }
@@ -152,7 +229,7 @@ export function AdminUsersView() {
     setActionLoading(true);
     setError(null);
     try {
-      await adminApi.updateAdminPermissions(selectedUser.id, editPermissions);
+      await superAdminApi.updateAdminPermissions(selectedUser.id, editPermissions);
       setShowPermissionsModal(false);
       fetchUsers();
     } catch (err: any) {
@@ -167,7 +244,7 @@ export function AdminUsersView() {
     setActionLoading(true);
     setError(null);
     try {
-      await adminApi.deleteUser(selectedUser.id);
+      await superAdminApi.deleteUser(selectedUser.id);
       setShowDeleteModal(false);
       fetchUsers();
     } catch (err: any) {
@@ -182,7 +259,13 @@ export function AdminUsersView() {
     setEditFullName(user.full_name || '');
     setEditRole(user.role);
     setEditStatus(user.status);
+    setEditCurrentPassword('');
     setEditPassword('');
+    setEditConfirmPassword('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+    setShowAdminPassword(false);
     setShowEditModal(true);
   };
 
@@ -224,13 +307,15 @@ export function AdminUsersView() {
             </p>
           </div>
 
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-[10px] bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white text-xs font-semibold shadow-sm transition-colors"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Create New User / Admin</span>
-          </button>
+          {isOriginalSuperAdmin && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-[10px] bg-[#6B8F71] hover:bg-[#597A5F] active:bg-[#4E6B52] text-white text-xs font-semibold shadow-sm transition-colors"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Create New User / Admin</span>
+            </button>
+          )}
         </div>
 
         {error && (
@@ -343,7 +428,11 @@ export function AdminUsersView() {
                         }`}
                       >
                         {u.role === 'SUPER_ADMIN' && <Shield className="w-3 h-3" />}
-                        {u.role.replace('_', ' ')}
+                        {u.role === 'SUPER_ADMIN'
+                          ? u.is_original_super_admin
+                            ? 'SUPER ADMIN'
+                            : 'SUB SUPER ADMIN'
+                          : u.role.replace('_', ' ')}
                       </span>
                     </td>
 
@@ -378,7 +467,7 @@ export function AdminUsersView() {
                     </td>
 
                     <td className="py-3 px-4 text-right space-x-1">
-                      {isSuperAdmin && u.role === 'ADMIN' && (
+                      {isOriginalSuperAdmin && u.role === 'ADMIN' && (
                         <button
                           onClick={() => openPermissionsModal(u)}
                           className="p-1.5 text-[#68736B] hover:text-[#6B8F71] hover:bg-white rounded border border-transparent hover:border-[#DDE5DE]"
@@ -396,7 +485,7 @@ export function AdminUsersView() {
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
 
-                      {isSuperAdmin && u.id !== currentUser?.id && (
+                      {isOriginalSuperAdmin && u.id !== currentUser?.id && (
                         <button
                           onClick={() => openDeleteModal(u)}
                           className="p-1.5 text-[#C94A4A] hover:bg-red-50 rounded"
@@ -471,7 +560,7 @@ export function AdminUsersView() {
                   >
                     <option value="CUSTOMER">CUSTOMER (Standard User)</option>
                     <option value="ADMIN">ADMIN (Configurable Permissions)</option>
-                    <option value="SUPER_ADMIN">SUPER_ADMIN (Full Unrestricted Access)</option>
+                    <option value="SUPER_ADMIN">SUPER_ADMIN (Sub Super Admin)</option>
                   </select>
                 </div>
               )}
@@ -617,23 +706,121 @@ export function AdminUsersView() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-xs font-semibold text-[#1D1E18] mb-1">
-                  Reset Password <span className="text-[#68736B] font-normal">(leave blank to keep unchanged)</span>
-                </label>
-                <input
-                  type="password"
-                  value={editPassword}
-                  onChange={(e) => setEditPassword(e.target.value)}
-                  placeholder="New password (optional)"
-                  className="w-full px-3 py-2 text-xs rounded-[10px] border border-[#DDE5DE] bg-[#F6F8F5] focus:bg-white focus:outline-none"
-                />
-              </div>
+              {/* Scenario A: Sub Super Admin changing their own password */}
+              {isSelfSubSuperAdmin ? (
+                <div className="space-y-3 pt-2 border-t border-[#DDE5DE]">
+                  <div>
+                    <h3 className="text-xs font-bold font-heading text-[#1D1E18]">Change Password</h3>
+                    <p className="text-[11px] text-[#68736B]">Enter your current password to continue</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1D1E18] mb-1">
+                      Current Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showCurrentPassword ? 'text' : 'password'}
+                        value={editCurrentPassword}
+                        onChange={(e) => setEditCurrentPassword(e.target.value)}
+                        placeholder="Enter current password"
+                        autoComplete="current-password"
+                        className="w-full pl-3 pr-10 py-2 text-xs rounded-[10px] border border-[#DDE5DE] bg-[#F6F8F5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#6B8F71]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#68736B] hover:text-[#1D1E18] p-0.5 transition-colors"
+                        aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                      >
+                        {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1D1E18] mb-1">
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={editPassword}
+                        onChange={(e) => setEditPassword(e.target.value)}
+                        placeholder="Enter new password"
+                        autoComplete="new-password"
+                        className="w-full pl-3 pr-10 py-2 text-xs rounded-[10px] border border-[#DDE5DE] bg-[#F6F8F5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#6B8F71]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#68736B] hover:text-[#1D1E18] p-0.5 transition-colors"
+                        aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1D1E18] mb-1">
+                      Confirm New Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={editConfirmPassword}
+                        onChange={(e) => setEditConfirmPassword(e.target.value)}
+                        placeholder="Confirm new password"
+                        autoComplete="new-password"
+                        className="w-full pl-3 pr-10 py-2 text-xs rounded-[10px] border border-[#DDE5DE] bg-[#F6F8F5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#6B8F71]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#68736B] hover:text-[#1D1E18] p-0.5 transition-colors"
+                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : isOriginalSuperAdmin ? (
+                /* Scenario B: Super Admin managing user password */
+                <div>
+                  <label className="block text-xs font-semibold text-[#1D1E18] mb-1">
+                    Reset Password <span className="text-[#68736B] font-normal">(leave blank to keep unchanged)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showAdminPassword ? 'text' : 'password'}
+                      value={editPassword}
+                      onChange={(e) => setEditPassword(e.target.value)}
+                      placeholder="New password (optional)"
+                      className="w-full pl-3 pr-10 py-2 text-xs rounded-[10px] border border-[#DDE5DE] bg-[#F6F8F5] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#6B8F71]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminPassword(!showAdminPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#68736B] hover:text-[#1D1E18] p-0.5 transition-colors"
+                      aria-label={showAdminPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#DDE5DE]">
                 <button
                   type="button"
-                  onClick={() => setShowEditModal(false)}
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditCurrentPassword('');
+                    setEditPassword('');
+                    setEditConfirmPassword('');
+                  }}
                   className="px-4 py-2 rounded-[10px] border border-[#DDE5DE] text-xs font-semibold text-[#68736B] hover:bg-[#F6F8F5]"
                 >
                   Cancel

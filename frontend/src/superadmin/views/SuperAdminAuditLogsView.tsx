@@ -11,9 +11,9 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { AuditLogItem } from '../types';
-import { adminApi } from '../services/adminApi';
+import { superAdminApi } from '../services/superAdminApi';
 
-export function AdminAuditLogsView() {
+export function SuperAdminAuditLogsView() {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -27,7 +27,7 @@ export function AdminAuditLogsView() {
     setLoading(true);
     setError(null);
     try {
-      const data = await adminApi.listAuditLogs({
+      const data = await superAdminApi.listAuditLogs({
         actor: actorFilter || undefined,
         action: actionFilter || undefined,
       });

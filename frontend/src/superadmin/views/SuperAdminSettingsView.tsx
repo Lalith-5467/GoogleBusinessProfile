@@ -10,11 +10,11 @@ import {
   Globe,
   UserCheck
 } from 'lucide-react';
-import { useAdminAuth } from '../context/AdminAuthContext';
-import { adminApi } from '../services/adminApi';
+import { useSuperAdminAuth } from '../context/SuperAdminAuthContext';
+import { superAdminApi } from '../services/superAdminApi';
 
-export function AdminSettingsView() {
-  const { currentUser, isSuperAdmin, isOriginalSuperAdmin } = useAdminAuth();
+export function SuperAdminSettingsView() {
+  const { currentUser, isSuperAdmin, isOriginalSuperAdmin } = useSuperAdminAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -46,7 +46,7 @@ export function AdminSettingsView() {
     setSuccess(false);
 
     try {
-      await adminApi.changePassword({
+      await superAdminApi.changePassword({
         current_password: currentPassword,
         new_password: newPassword,
       });

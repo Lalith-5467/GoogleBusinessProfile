@@ -20,8 +20,10 @@ from app.schemas.admin import (
 from app.services.auth import (
     require_admin,
     require_super_admin,
+    require_original_super_admin,
     require_admin_permission,
     hash_password,
+    verify_password,
     generate_salt
 )
 from app.services.audit import log_audit_event
@@ -75,6 +77,7 @@ def list_users(
                 status=u.status,
                 plan_id=u.plan_id,
                 plan_name=plans.get(u.plan_id, "Free"),
+                is_original_super_admin=getattr(u, "is_original_super_admin", False),
                 last_login_at=u.last_login_at,
                 created_at=u.created_at,
                 scraping_jobs_count=scraping_count,
@@ -94,17 +97,19 @@ def create_user(
 ):
     """
     Creates a new user account.
-    - Super Admin can create SUPER_ADMIN, ADMIN, or CUSTOMER accounts.
-    - Regular Admin can only create CUSTOMER accounts.
+    - Original Super Admin can create SUPER_ADMIN, ADMIN, or CUSTOMER accounts.
+    - Sub Super Admin / Regular Admin can create CUSTOMER accounts.
     """
     clean_email = payload.email.strip().lower()
     target_role = payload.role.strip().upper()
 
-    if target_role in ["SUPER_ADMIN", "ADMIN"] and current_admin.role != "SUPER_ADMIN":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Super Admins can create administrative accounts."
-        )
+    # Only Original Super Admin can create administrative accounts
+    if target_role in ["SUPER_ADMIN", "ADMIN"]:
+        if current_admin.role != "SUPER_ADMIN" or not getattr(current_admin, "is_original_super_admin", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the Original Super Admin can create administrative accounts."
+            )
 
     existing = db.query(User).filter(User.email == clean_email).first()
     if existing:
@@ -123,7 +128,9 @@ def create_user(
         full_name=payload.full_name,
         role=target_role,
         status=payload.status.strip().upper(),
-        plan_id=payload.plan_id
+        plan_id=payload.plan_id,
+        is_original_super_admin=False,  # Accounts created by the Original Super Admin are never original super admins
+        created_by_id=current_admin.id
     )
     db.add(new_user)
     db.commit()
@@ -168,6 +175,7 @@ def create_user(
         role=new_user.role,
         status=new_user.status,
         plan_id=new_user.plan_id,
+        is_original_super_admin=new_user.is_original_super_admin,
         last_login_at=new_user.last_login_at,
         created_at=new_user.created_at,
         permissions=perms_schema
@@ -192,6 +200,7 @@ def get_user_detail(
         role=user.role,
         status=user.status,
         plan_id=user.plan_id,
+        is_original_super_admin=getattr(user, "is_original_super_admin", False),
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         permissions=perms_schema
@@ -205,17 +214,16 @@ def update_user(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_admin_permission("can_manage_users"))
 ):
-    """Updates user fields (name, email, plan, role, password). Super Admin privilege required for role modifications."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
     # Role escalation check
     if payload.role and payload.role != user.role:
-        if current_admin.role != "SUPER_ADMIN":
+        if current_admin.role != "SUPER_ADMIN" or not getattr(current_admin, "is_original_super_admin", False):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only Super Admins can alter user roles."
+                detail="Only the Original Super Admin can alter user roles."
             )
         user.role = payload.role.strip().upper()
 
@@ -237,9 +245,61 @@ def update_user(
         user.plan_id = payload.plan_id
 
     if payload.password and payload.password.strip():
-        salt = generate_salt()
-        user.salt = salt
-        user.password_hash = hash_password(payload.password.strip(), salt)
+        is_sub_super_admin = (
+            current_admin.role == "SUPER_ADMIN" and not getattr(current_admin, "is_original_super_admin", False)
+        )
+        if is_sub_super_admin:
+            if user.id != current_admin.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Sub Super Admins cannot reset passwords for other accounts."
+                )
+            if not payload.current_password or not payload.current_password.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Please enter your current password."
+                )
+            if not current_admin.salt or not current_admin.password_hash or not verify_password(payload.current_password, current_admin.password_hash, current_admin.salt):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Current password is incorrect."
+                )
+            new_pwd = payload.password.strip()
+            if payload.current_password == new_pwd:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="New password must be different from your current password."
+                )
+            if not payload.confirm_password or payload.confirm_password.strip() != new_pwd:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="New password and confirm password do not match."
+                )
+            if len(new_pwd) < 8:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="New password must be at least 8 characters long."
+                )
+
+            salt = generate_salt()
+            current_admin.salt = salt
+            current_admin.password_hash = hash_password(new_pwd, salt)
+        else:
+            new_pwd = payload.password.strip()
+            if payload.confirm_password is not None and payload.confirm_password.strip() and payload.confirm_password.strip() != new_pwd:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="New password and confirm password do not match."
+                )
+            if len(new_pwd) < 8:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="New password must be at least 8 characters long."
+                )
+
+            salt = generate_salt()
+            user.salt = salt
+            user.password_hash = hash_password(new_pwd, salt)
 
     db.commit()
     db.refresh(user)
@@ -264,6 +324,7 @@ def update_user(
         role=user.role,
         status=user.status,
         plan_id=user.plan_id,
+        is_original_super_admin=getattr(user, "is_original_super_admin", False),
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         permissions=perms_schema
@@ -277,13 +338,12 @@ def update_user_status(
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_admin_permission("can_manage_users"))
 ):
-    """Changes user status (ACTIVE, INACTIVE, SUSPENDED) with confirmation logging."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
     if user.role == "SUPER_ADMIN" and current_admin.id != user.id:
-        if current_admin.role != "SUPER_ADMIN":
+        if current_admin.role != "SUPER_ADMIN" or not getattr(current_admin, "is_original_super_admin", False):
             raise HTTPException(status_code=403, detail="Cannot alter status of a Super Admin account.")
 
     new_status = payload.status.strip().upper()
@@ -315,6 +375,7 @@ def update_user_status(
         role=user.role,
         status=user.status,
         plan_id=user.plan_id,
+        is_original_super_admin=getattr(user, "is_original_super_admin", False),
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         permissions=perms_schema
@@ -326,9 +387,9 @@ def update_admin_permissions(
     payload: UpdatePermissionsRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_super_admin)
+    current_admin: User = Depends(require_original_super_admin)
 ):
-    """Allows Super Admin to configure granular permissions for an Admin account."""
+    """Allows Original Super Admin to configure granular permissions for an Admin account."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
@@ -371,9 +432,9 @@ def delete_user(
     user_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_super_admin)
+    current_admin: User = Depends(require_original_super_admin)
 ):
-    """Super Admin safely deletes a user account (cannot delete own account)."""
+    """Original Super Admin safely deletes a user account (cannot delete own account)."""
     if current_admin.id == user_id:
         raise HTTPException(status_code=400, detail="You cannot delete your own Super Admin account.")
 

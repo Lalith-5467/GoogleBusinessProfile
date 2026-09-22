@@ -1,27 +1,28 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { UserProfile, AdminPermission } from '../types';
-import { adminApi, adminTokenStorage } from '../services/adminApi';
+import { superAdminApi, superAdminTokenStorage } from '../services/superAdminApi';
 
-interface AdminAuthContextType {
+interface SuperAdminAuthContextType {
   currentUser: UserProfile | null;
   loading: boolean;
   isAuthenticated: boolean;
   isSuperAdmin: boolean;
   isOriginalSuperAdmin: boolean;
+  isViewOnlySuperAdmin: boolean;
   hasPermission: (key: keyof AdminPermission) => boolean;
   login: (credentials: { email: string; password: string }) => Promise<void>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
 }
 
-const AdminAuthContext = createContext<AdminAuthContextType | undefined>(undefined);
+const SuperAdminAuthContext = createContext<SuperAdminAuthContextType | undefined>(undefined);
 
-export function AdminAuthProvider({ children }: { children: ReactNode }) {
+export function SuperAdminAuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   const refreshProfile = async () => {
-    const token = adminTokenStorage.get();
+    const token = superAdminTokenStorage.get();
     if (!token) {
       setCurrentUser(null);
       setLoading(false);
@@ -29,15 +30,15 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const user = await adminApi.getProfile();
-      if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
+      const user = await superAdminApi.getProfile();
+      if (user.role === 'SUPER_ADMIN') {
         setCurrentUser(user);
       } else {
-        adminTokenStorage.remove();
+        superAdminTokenStorage.remove();
         setCurrentUser(null);
       }
     } catch {
-      adminTokenStorage.remove();
+      superAdminTokenStorage.remove();
       setCurrentUser(null);
     } finally {
       setLoading(false);
@@ -51,7 +52,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const login = async (credentials: { email: string; password: string }) => {
     setLoading(true);
     try {
-      const data = await adminApi.login(credentials);
+      const data = await superAdminApi.login(credentials);
       setCurrentUser(data.user);
     } finally {
       setLoading(false);
@@ -59,12 +60,13 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    adminTokenStorage.remove();
+    superAdminTokenStorage.remove();
     setCurrentUser(null);
   };
 
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const isOriginalSuperAdmin = !!currentUser?.is_original_super_admin;
+  const isViewOnlySuperAdmin = currentUser?.role === 'SUPER_ADMIN' && !currentUser?.is_original_super_admin;
 
   const hasPermission = (key: keyof AdminPermission): boolean => {
     if (!currentUser) return false;
@@ -73,16 +75,17 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     return !!currentUser.permissions[key];
   };
 
-  const isAuthenticated = !!currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPER_ADMIN');
+  const isAuthenticated = !!currentUser && currentUser.role === 'SUPER_ADMIN';
 
   return (
-    <AdminAuthContext.Provider
+    <SuperAdminAuthContext.Provider
       value={{
         currentUser,
         loading,
         isAuthenticated,
         isSuperAdmin,
         isOriginalSuperAdmin,
+        isViewOnlySuperAdmin,
         hasPermission,
         login,
         logout,
@@ -90,14 +93,14 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-    </AdminAuthContext.Provider>
+    </SuperAdminAuthContext.Provider>
   );
 }
 
-export function useAdminAuth(): AdminAuthContextType {
-  const context = useContext(AdminAuthContext);
+export function useSuperAdminAuth(): SuperAdminAuthContextType {
+  const context = useContext(SuperAdminAuthContext);
   if (!context) {
-    throw new Error('useAdminAuth must be used within an AdminAuthProvider');
+    throw new Error('useSuperAdminAuth must be used within a SuperAdminAuthProvider');
   }
   return context;
 }

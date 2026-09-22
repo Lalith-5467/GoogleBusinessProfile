@@ -67,3 +67,7 @@ Thumbs.db
 frontend/.env.production
 frontend/.env.development
 
+# Release Archives
+release/
+*.zip
+

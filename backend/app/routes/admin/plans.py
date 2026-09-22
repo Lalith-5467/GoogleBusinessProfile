@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User, SubscriptionPlan
 from app.schemas.admin import SubscriptionPlanSchema, UpdatePlanRequest
-from app.services.auth import require_admin, require_super_admin, require_admin_permission
+from app.services.auth import require_admin, require_super_admin, require_original_super_admin, require_admin_permission
 from app.services.audit import log_audit_event
 
 logger = logging.getLogger("google-business-backend")
@@ -29,7 +29,7 @@ def update_plan(
     payload: UpdatePlanRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_admin: User = Depends(require_super_admin)
+    current_admin: User = Depends(require_original_super_admin)
 ):
     """Super Admin updates plan pricing, limits, and active status."""
     plan = db.query(SubscriptionPlan).filter_by(id=plan_id).first()

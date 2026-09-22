@@ -1,28 +1,56 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Globe, Shield } from 'lucide-react';
+import { Building2, Globe, Shield, ShieldCheck } from 'lucide-react';
 import { GoogleBusinessView } from './components/GoogleBusinessView';
 import { WebsiteScraperView } from './components/WebsiteScraperView';
 import { API_CONFIG } from './config/api.config';
 import { ToastProvider } from './context';
+import { SuperAdminRoot } from './superadmin/SuperAdminRoot';
 import { AdminRoot } from './admin/AdminRoot';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'google' | 'scraper'>('google');
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
-  // Check URL pathname or hash for /admin routing
-  const getIsAdminRoute = () => {
+  // Check URL pathname, hash, or search params for Super Admin (/superadmin, /super-admin)
+  const getIsSuperAdminRoute = () => {
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
     return (
-      window.location.pathname.startsWith('/admin') ||
-      window.location.hash.startsWith('#admin') ||
-      window.location.search.includes('view=admin')
+      path.startsWith('/superadmin') ||
+      path.startsWith('/super-admin') ||
+      path.startsWith('/super_admin') ||
+      hash.startsWith('#superadmin') ||
+      hash.startsWith('#super-admin') ||
+      hash.startsWith('#super_admin') ||
+      search.includes('view=superadmin') ||
+      search.includes('view=super-admin') ||
+      search.includes('view=super_admin')
     );
   };
 
+  // Check URL pathname, hash, or search params for Operations Admin (/admin)
+  const getIsAdminRoute = () => {
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const search = window.location.search.toLowerCase();
+
+    // If it's a Super Admin route, it takes precedence
+    if (getIsSuperAdminRoute()) return false;
+
+    return (
+      path.startsWith('/admin') ||
+      hash.startsWith('#admin') ||
+      search.includes('view=admin')
+    );
+  };
+
+  const [isSuperAdminMode, setIsSuperAdminMode] = useState<boolean>(getIsSuperAdminRoute);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(getIsAdminRoute);
 
   useEffect(() => {
     const handleLocationChange = () => {
+      setIsSuperAdminMode(getIsSuperAdminRoute());
       setIsAdminMode(getIsAdminRoute());
     };
 
@@ -34,9 +62,16 @@ export function App() {
     };
   }, []);
 
+  const navigateToSuperAdmin = () => {
+    window.history.pushState({}, '', '/superadmin');
+    setIsSuperAdminMode(true);
+    setIsAdminMode(false);
+  };
+
   const navigateToAdmin = () => {
     window.history.pushState({}, '', '/admin');
     setIsAdminMode(true);
+    setIsSuperAdminMode(false);
   };
 
   const navigateToWebsite = () => {
@@ -45,8 +80,19 @@ export function App() {
       localStorage.removeItem('gbp_admin_access_token');
     } catch {}
     window.history.pushState({}, '', '/');
+    setIsSuperAdminMode(false);
     setIsAdminMode(false);
   };
+
+  useEffect(() => {
+    if (isSuperAdminMode) {
+      document.title = 'Super Admin Console | Google Business Profile';
+    } else if (isAdminMode) {
+      document.title = 'Admin Portal | Operations Console';
+    } else {
+      document.title = 'Google Business Profile Management & Scraper';
+    }
+  }, [isSuperAdminMode, isAdminMode]);
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -69,7 +115,16 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // If in Admin Mode, render the isolated, protected Super Admin System
+  // 1. If in Super Admin Mode, render the isolated Super Admin Master System
+  if (isSuperAdminMode) {
+    return (
+      <ToastProvider>
+        <SuperAdminRoot onBackToWebsite={navigateToWebsite} />
+      </ToastProvider>
+    );
+  }
+
+  // 2. If in Admin Mode, render the dedicated Operations Admin Portal
   if (isAdminMode) {
     return (
       <ToastProvider>
@@ -78,7 +133,7 @@ export function App() {
     );
   }
 
-  // Otherwise, render the exact 100% untouched customer application
+  // 3. Otherwise, render the exact 100% untouched customer application
   return (
     <ToastProvider>
       <div className="min-h-screen bg-[#F6F8F5] text-[#1D1E18] flex flex-col font-sans selection:bg-[#AAD2BA] selection:text-[#1D1E18]">
@@ -105,7 +160,7 @@ export function App() {
             <nav className="flex items-center bg-[#F6F8F5] p-1 rounded-[10px] border border-[#DDE5DE] shrink-0">
               <button
                 onClick={() => setActiveTab('google')}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 rounded-[8px] text-xs font-heading font-semibold transition-all ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 rounded-[8px] text-xs font-heading font-semibold transition-all cursor-pointer ${
                   activeTab === 'google'
                     ? 'bg-[#6B8F71] text-white shadow-sm'
                     : 'text-[#68736B] hover:text-[#1D1E18] hover:bg-white/70'
@@ -118,7 +173,7 @@ export function App() {
 
               <button
                 onClick={() => setActiveTab('scraper')}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 rounded-[8px] text-xs font-heading font-semibold transition-all ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 rounded-[8px] text-xs font-heading font-semibold transition-all cursor-pointer ${
                   activeTab === 'scraper'
                     ? 'bg-[#6B8F71] text-white shadow-sm'
                     : 'text-[#68736B] hover:text-[#1D1E18] hover:bg-white/70'
@@ -130,8 +185,8 @@ export function App() {
               </button>
             </nav>
 
-            {/* Right Group: Backend Status Indicator */}
-            <div className="flex items-center gap-2 text-xs shrink-0">
+            {/* Right Group: Backend Status Indicator, Admin Portal & Super Admin Access */}
+            <div className="flex items-center gap-2 sm:gap-3 text-xs shrink-0">
               <div className="hidden md:flex items-center gap-2">
                 {backendOnline === true ? (
                   <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#EAF4EE] border border-[#AAD2BA] text-[#2F7D4A] font-mono text-[11px] font-medium" title="Backend connected">
@@ -150,6 +205,26 @@ export function App() {
                   </span>
                 )}
               </div>
+
+              {/* Dedicated Admin Portal Button */}
+              <button
+                onClick={navigateToAdmin}
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#1E293B] bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#CBD5E1] transition-colors cursor-pointer"
+                title="Open Operations Admin Portal"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#3B82F6]" />
+                <span className="hidden sm:inline font-heading">Admin</span>
+              </button>
+
+              {/* Super Admin Console Button */}
+              <button
+                onClick={navigateToSuperAdmin}
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#1D1E18] bg-[#F6F8F5] hover:bg-[#EEF4F0] border border-[#DDE5DE] transition-colors shadow-2xs cursor-pointer"
+                title="Open Super Admin Console"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#6B8F71]" />
+                <span className="hidden sm:inline font-heading">Super Admin</span>
+              </button>
             </div>
           </div>
         </header>
@@ -164,8 +239,29 @@ export function App() {
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-[#DDE5DE] bg-white py-4 sm:py-5 text-center text-xs text-[#68736B] px-4">
-          Google Business Profile Management &bull; Excel Export &bull; Python FastAPI & MySQL
+        <footer className="border-t border-[#DDE5DE] bg-white py-4 sm:py-5 text-xs text-[#68736B] px-4">
+          <div className="max-w-[1440px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left">
+            <div>
+              Google Business Profile Management &bull; Excel Export &bull; Python FastAPI & MySQL
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={navigateToAdmin}
+                className="text-[11px] text-[#64748B] hover:text-[#3B82F6] transition-colors inline-flex items-center gap-1.5 font-medium cursor-pointer"
+              >
+                <ShieldCheck className="w-3 h-3 text-[#3B82F6]" />
+                <span>Admin Portal</span>
+              </button>
+              <span className="text-[#DDE5DE]">&bull;</span>
+              <button
+                onClick={navigateToSuperAdmin}
+                className="text-[11px] text-[#68736B] hover:text-[#6B8F71] transition-colors inline-flex items-center gap-1.5 font-medium cursor-pointer"
+              >
+                <Shield className="w-3 h-3 text-[#6B8F71]" />
+                <span>Super Admin Console</span>
+              </button>
+            </div>
+          </div>
         </footer>
       </div>
     </ToastProvider>
@@ -173,3 +269,4 @@ export function App() {
 }
 
 export default App;
+

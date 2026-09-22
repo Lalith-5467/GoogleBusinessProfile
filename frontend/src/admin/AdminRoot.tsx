@@ -12,9 +12,9 @@ function AdminContent({ onBackToWebsite }: AdminRootProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F6F8F5] flex flex-col items-center justify-center">
+      <div className="min-h-screen bg-[#F6F8F5] flex flex-col items-center justify-center font-sans selection:bg-[#AAD2BA] selection:text-[#1D1E18]">
         <div className="w-10 h-10 border-3 border-[#6B8F71] border-t-transparent rounded-full animate-spin mb-3" />
-        <p className="text-xs font-semibold text-[#68736B]">Verifying Super Admin Authorization...</p>
+        <p className="text-xs font-semibold text-[#68736B]">Verifying Administrator Authorization...</p>
       </div>
     );
   }

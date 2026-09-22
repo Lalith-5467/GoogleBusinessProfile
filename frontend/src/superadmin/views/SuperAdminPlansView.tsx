@@ -10,11 +10,11 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
-import { adminApi } from '../services/adminApi';
-import { useAdminAuth } from '../context/AdminAuthContext';
+import { superAdminApi } from '../services/superAdminApi';
+import { useSuperAdminAuth } from '../context/SuperAdminAuthContext';
 
-export function AdminPlansView() {
-  const { isSuperAdmin } = useAdminAuth();
+export function SuperAdminPlansView() {
+  const { isOriginalSuperAdmin } = useSuperAdminAuth();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export function AdminPlansView() {
     setLoading(true);
     setError(null);
     try {
-      const data = await adminApi.listPlans();
+      const data = await superAdminApi.listPlans();
       setPlans(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load subscription plans.');
@@ -62,7 +62,7 @@ export function AdminPlansView() {
     setSaveLoading(true);
     setError(null);
     try {
-      await adminApi.updatePlan(selectedPlan.id, {
+      await superAdminApi.updatePlan(selectedPlan.id, {
         display_name: editDisplayName,
         price_monthly: editPrice,
         search_limit: editSearchLimit,
@@ -189,7 +189,7 @@ export function AdminPlansView() {
                 )}
               </div>
 
-              {isSuperAdmin && (
+              {isOriginalSuperAdmin && (
                 <div className="mt-6 pt-4 border-t border-[#F6F8F5]">
                   <button
                     onClick={() => openEditPlan(plan)}

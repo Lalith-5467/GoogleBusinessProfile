@@ -91,16 +91,10 @@ export const GoogleBusinessView: React.FC = () => {
     });
   }, [locations]);
 
-  // Statistics State
-  const [totalSearches, setTotalSearches] = useState<number>(() => {
-    const saved = localStorage.getItem('gb_total_searches');
-    return saved ? parseInt(saved, 10) || 0 : 0;
-  });
+  // Statistics State for search activity (starts at 0 on fresh page load)
+  const [totalSearches, setTotalSearches] = useState<number>(0);
   const [businessesFound, setBusinessesFound] = useState<number>(0);
-  const [csvExports, setCsvExports] = useState<number>(() => {
-    const saved = localStorage.getItem('gb_csv_exports');
-    return saved ? parseInt(saved, 10) || 0 : 0;
-  });
+  const [csvExports, setCsvExports] = useState<number>(0);
 
   const fetchInitialData = async () => {
     setLoading(true);
@@ -121,6 +115,14 @@ export const GoogleBusinessView: React.FC = () => {
   };
 
   useEffect(() => {
+    // Clear any stale persistent search counts so initial load starts cleanly at 0
+    try {
+      localStorage.removeItem('gb_total_searches');
+      localStorage.removeItem('gb_csv_exports');
+    } catch (e) {
+      // Ignore localStorage exceptions
+    }
+
     fetchInitialData();
 
     // Check for OAuth redirect params
@@ -249,9 +251,7 @@ export const GoogleBusinessView: React.FC = () => {
       const filename = `business_search_${safeKeyword || 'all'}_${safeLocation || 'all'}.csv`;
 
       exportScrapedBusinessesCsv(targets, filename);
-      const updatedExports = csvExports + 1;
-      setCsvExports(updatedExports);
-      localStorage.setItem('gb_csv_exports', String(updatedExports));
+      setCsvExports(prev => prev + 1);
       setSuccessMsg(`Export complete. Exported ${targets.length} current search businesses to CSV.`);
     } catch (err: any) {
       console.error("Search CSV export failed:", err);
@@ -291,10 +291,8 @@ export const GoogleBusinessView: React.FC = () => {
       const foundCount = bizList.length;
       setBusinessesFound(foundCount);
 
-      // Increment Total Searches statistic
-      const updatedSearches = totalSearches + 1;
-      setTotalSearches(updatedSearches);
-      localStorage.setItem('gb_total_searches', String(updatedSearches));
+      // Increment Total Searches statistic for current session
+      setTotalSearches(prev => prev + 1);
 
       if (foundCount > 0) {
         setSuccessMsg(`Search completed successfully. Found ${foundCount} matching businesses for '${searchKeyword.trim()}' in '${searchLocation.trim()}'.`);
@@ -402,10 +400,10 @@ export const GoogleBusinessView: React.FC = () => {
                 <input
                   type="number"
                   min="1"
-                  max="200"
+                  max="500"
                   value={searchCount}
                   onChange={(e) => setSearchCount(e.target.value)}
-                  placeholder="e.g. 50"
+                  placeholder="e.g. 100"
                   className="w-full h-11 bg-white border border-[#DDE5DE] rounded-[10px] pl-10 pr-3 py-2 text-sm text-[#1D1E18] placeholder-[#68736B]/60 focus:outline-none focus:border-[#6B8F71] focus:ring-1 focus:ring-[#6B8F71] transition-all"
                 />
               </div>

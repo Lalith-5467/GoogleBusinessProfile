@@ -492,10 +492,10 @@ class GooglePlacesService:
         clean_kw = keyword.strip()
         clean_loc = (location or "").strip()
         query = f"{clean_kw} in {clean_loc}" if clean_loc else clean_kw
-        limit = min(max(1, max_count), 50)
+        limit = min(max(1, max_count), 200)
 
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            # 1. Try Google Places API (New) Text Search
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # 1. Try Google Places API (New) Text Search with pagination
             new_search_url = "https://places.googleapis.com/v1/places:searchText"
             new_field_mask = (
                 "places.id,places.displayName,places.formattedAddress,places.shortFormattedAddress,"
@@ -506,60 +506,92 @@ class GooglePlacesService:
                 "places.priceLevel,places.editorialSummary,places.paymentOptions,places.parkingOptions,"
                 "places.accessibilityOptions,places.outdoorSeating,places.delivery,places.dineIn,"
                 "places.takeout,places.reservable,places.goodForChildren,places.goodForGroups,"
-                "places.addressComponents,places.plusCode"
+                "places.addressComponents,places.plusCode,nextPageToken"
             )
             new_headers = {
                 "X-Goog-Api-Key": api_key,
                 "X-Goog-FieldMask": new_field_mask,
                 "Content-Type": "application/json"
             }
-            new_payload = {
-                "textQuery": query,
-                "maxResultCount": min(limit, 20)
-            }
 
+            all_new_places: List[Dict[str, Any]] = []
+            next_page_token: Optional[str] = None
             try:
-                resp = await client.post(new_search_url, headers=new_headers, json=new_payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    places = data.get("places", [])
-                    if places:
-                        normalized_list: List[Dict[str, Any]] = []
-                        for p in places[:limit]:
-                            default_meta = {
-                                "source_type": "GOOGLE_PLACES_API",
-                                "data_source": "Google Places API (Official)",
-                                "search_keyword": clean_kw,
-                                "search_area": clean_loc or None,
-                                "status": "ACTIVE",
-                                "city": clean_loc.title() if clean_loc else None,
-                            }
-                            norm = _normalize_place_data(p, default_meta)
-                            normalized_list.append(norm)
-                        return normalized_list
+                while len(all_new_places) < limit:
+                    page_size = min(limit - len(all_new_places), 20)
+                    new_payload = {
+                        "textQuery": query,
+                        "pageSize": page_size
+                    }
+                    if next_page_token:
+                        new_payload["pageToken"] = next_page_token
+
+                    resp = await client.post(new_search_url, headers=new_headers, json=new_payload)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        places = data.get("places", [])
+                        if not places:
+                            break
+                        all_new_places.extend(places)
+                        next_page_token = data.get("nextPageToken")
+                        if not next_page_token or len(all_new_places) >= limit:
+                            break
+                    else:
+                        break
+
+                if all_new_places:
+                    normalized_list: List[Dict[str, Any]] = []
+                    for p in all_new_places[:limit]:
+                        default_meta = {
+                            "source_type": "GOOGLE_PLACES_API",
+                            "data_source": "Google Places API (Official)",
+                            "search_keyword": clean_kw,
+                            "search_area": clean_loc or None,
+                            "status": "ACTIVE",
+                            "city": clean_loc.title() if clean_loc else None,
+                        }
+                        norm = _normalize_place_data(p, default_meta)
+                        normalized_list.append(norm)
+                    return normalized_list
             except Exception as e:
                 logger.debug(f"Places API (New) search attempt notice: {e}")
 
-            # 2. Fallback to Legacy Google Places Text Search
+            # 2. Fallback to Legacy Google Places Text Search with pagination
             legacy_url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
             legacy_params = {
                 "query": query,
                 "key": api_key,
             }
 
-            resp = await client.get(legacy_url, params=legacy_params)
-            if resp.status_code != 200:
-                logger.error(f"Google Places API HTTP error: {resp.status_code} - {resp.text}")
-                raise ValueError(f"Google Places API request failed with status {resp.status_code}.")
+            raw_places: List[Dict[str, Any]] = []
+            while len(raw_places) < limit:
+                resp = await client.get(legacy_url, params=legacy_params)
+                if resp.status_code != 200:
+                    if raw_places:
+                        break
+                    logger.error(f"Google Places API HTTP error: {resp.status_code} - {resp.text}")
+                    raise ValueError(f"Google Places API request failed with status {resp.status_code}.")
 
-            data = resp.json()
-            status = data.get("status")
-            if status not in ("OK", "ZERO_RESULTS"):
-                err_msg = data.get("error_message", status)
-                logger.error(f"Google Places API returned status '{status}': {err_msg}")
-                raise ValueError(f"Google Places API error: {err_msg}")
+                data = resp.json()
+                status = data.get("status")
+                if status not in ("OK", "ZERO_RESULTS"):
+                    if raw_places:
+                        break
+                    err_msg = data.get("error_message", status)
+                    logger.error(f"Google Places API returned status '{status}': {err_msg}")
+                    raise ValueError(f"Google Places API error: {err_msg}")
 
-            raw_places = data.get("results", [])
+                results = data.get("results", [])
+                if not results:
+                    break
+                raw_places.extend(results)
+
+                next_page_token = data.get("next_page_token")
+                if not next_page_token or len(raw_places) >= limit:
+                    break
+                await asyncio.sleep(2.0)
+                legacy_params["pagetoken"] = next_page_token
+
             base_places: List[Dict[str, Any]] = []
             for p in raw_places[:limit]:
                 place_id = p.get("place_id") or ""

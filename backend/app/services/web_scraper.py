@@ -218,7 +218,8 @@ class WebScraperService:
             extracted_list = await WebScraperService._extract_google_maps_search(
                 target_url=target_url,
                 search_keyword=clean_kw,
-                search_area=clean_loc
+                search_area=clean_loc,
+                max_count=limit
             )
             extracted_list = extracted_list[:limit]
 
@@ -282,7 +283,8 @@ class WebScraperService:
     async def _extract_google_maps_search(
         target_url: str, 
         search_keyword: Optional[str] = None, 
-        search_area: Optional[str] = None
+        search_area: Optional[str] = None,
+        max_count: int = 50
     ) -> List[Dict[str, Any]]:
         """
         Playwright scraper for Google Maps Search URLs.
@@ -296,7 +298,8 @@ class WebScraperService:
                         WebScraperService._extract_google_maps_search_impl,
                         target_url=target_url,
                         search_keyword=search_keyword,
-                        search_area=search_area
+                        search_area=search_area,
+                        max_count=max_count
                     )
             except Exception as e:
                 logger.warning(f"Proactor thread fallback: {e}")
@@ -304,18 +307,21 @@ class WebScraperService:
         return await WebScraperService._extract_google_maps_search_impl(
             target_url=target_url,
             search_keyword=search_keyword,
-            search_area=search_area
+            search_area=search_area,
+            max_count=max_count
         )
 
     @staticmethod
     async def _extract_google_maps_search_impl(
         target_url: str, 
         search_keyword: Optional[str] = None, 
-        search_area: Optional[str] = None
+        search_area: Optional[str] = None,
+        max_count: int = 50
     ) -> List[Dict[str, Any]]:
         """
         Playwright scraper implementation for Google Maps Search URLs.
-        Scrolls search results feed, extracts all resolved business cards into complete records.
+        Scrolls search results feed dynamically until reaching max_count or end of list,
+        extracts all resolved business cards into complete records.
         """
         async with async_playwright() as p:
             browser = await WebScraperService._launch_browser(p)
@@ -325,13 +331,14 @@ class WebScraperService:
             )
             page = await context.new_page()
             extracted_cards: List[Dict[str, Any]] = []
+            target_limit = max(1, max_count)
 
             try:
-                response = await page.goto(target_url, timeout=35000, wait_until="domcontentloaded")
+                response = await page.goto(target_url, timeout=45000, wait_until="domcontentloaded")
                 if response and response.status >= 400:
                     raise ValueError("Unable to access the Google Maps results page.")
 
-                await page.wait_for_timeout(3500)
+                await page.wait_for_timeout(3000)
 
                 # Dismiss cookie dialogs if present
                 try:
@@ -342,17 +349,59 @@ class WebScraperService:
                 except Exception:
                     pass
 
-                # Locate feed container and scroll
+                # Locate feed container and scroll dynamically until reaching target_limit or end of list
                 feed_selector = 'div[role="feed"], div[aria-label*="Results for"], div.m6QEdf[role="region"]'
+                card_selector = 'div.Nv2pk, div[role="article"]'
                 try:
-                    await page.wait_for_selector(feed_selector, timeout=8000)
+                    await page.wait_for_selector(f'{feed_selector}, {card_selector}', timeout=12000)
                     feed_loc = page.locator(feed_selector).first
                     if await feed_loc.count() > 0:
-                        for _ in range(5):
-                            await feed_loc.evaluate('el => el.scrollBy(0, 1000)')
-                            await page.wait_for_timeout(800)
-                except Exception:
-                    pass
+                        last_card_count = 0
+                        stagnant_scroll_count = 0
+                        max_iterations = max(35, (target_limit // 4) + 15)
+
+                        for _ in range(max_iterations):
+                            current_card_count = await page.locator(card_selector).count()
+                            if current_card_count >= target_limit:
+                                break
+
+                            # Check if reached end of list
+                            end_of_list = await page.evaluate(r'''() => {
+                                const endEl = document.querySelector('div.HlvqCb, span.HlvqCb, .fontBodyMedium');
+                                if (endEl && (endEl.textContent.includes("You've reached the end") || endEl.textContent.includes("end of the list"))) {
+                                    return true;
+                                }
+                                return document.body.innerText.includes("You've reached the end of the list");
+                            }''')
+                            if end_of_list:
+                                break
+
+                            # Scroll last card into view & scroll container
+                            try:
+                                last_card = page.locator(card_selector).last
+                                if await last_card.count() > 0:
+                                    await last_card.scroll_into_view_if_needed(timeout=1500)
+                            except Exception:
+                                pass
+
+                            await feed_loc.evaluate('el => { el.scrollTop = el.scrollHeight; }')
+                            await page.wait_for_timeout(1000)
+
+                            new_card_count = await page.locator(card_selector).count()
+                            if new_card_count == last_card_count:
+                                stagnant_scroll_count += 1
+                                # Jiggle scroll to force trigger lazy load / intersection observer
+                                await feed_loc.evaluate('el => el.scrollBy(0, -500)')
+                                await page.wait_for_timeout(300)
+                                await feed_loc.evaluate('el => { el.scrollTop = el.scrollHeight; }')
+                                await page.wait_for_timeout(700)
+                                if stagnant_scroll_count >= 4:
+                                    break
+                            else:
+                                stagnant_scroll_count = 0
+                                last_card_count = new_card_count
+                except Exception as e:
+                    logger.debug(f"Feed scroll notice: {e}")
 
                 # Query card data in browser context
                 raw_cards = await page.evaluate(r'''() => {

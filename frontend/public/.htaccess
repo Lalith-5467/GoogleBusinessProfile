@@ -1,0 +1,18 @@
+# ==============================================================================
+# LiteSpeed / Apache SPA URL Rewrite Configuration
+# Ensures that routes like /superadmin, /admin, etc. resolve to index.html
+# and allows API calls to pass through without 404 errors.
+# ==============================================================================
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Do not rewrite existing physical files or directories
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Route all other frontend requests to index.html for React Router / SPA navigation
+  RewriteRule ^ index.html [L]
+</IfModule>

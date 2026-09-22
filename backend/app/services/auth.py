@@ -159,7 +159,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Ensures user has unrestricted SUPER_ADMIN role."""
+    """Ensures user has SUPER_ADMIN role (both original and created)."""
     if current_user.role != "SUPER_ADMIN":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -167,11 +167,33 @@ def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
         )
     return current_user
 
+def require_original_super_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Ensures user is the Original Super Admin with full unrestricted CRUD control."""
+    if current_user.role != "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Admin privileges required to perform this action."
+        )
+    if not getattr(current_user, "is_original_super_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="View-only Super Admin account cannot perform administrative modifications."
+        )
+    return current_user
+
+def verify_super_admin_not_view_only(user: User):
+    """Raises 403 Forbidden if a created Super Admin attempts to execute a mutating action."""
+    if user.role == "SUPER_ADMIN" and not getattr(user, "is_original_super_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="View-only Super Admin account cannot create, modify, or delete resources."
+        )
+
 def require_admin_permission(permission_key: str):
     """Factory dependency ensuring an Admin user has a specific configured permission."""
     def permission_checker(current_user: User = Depends(require_admin)) -> User:
         if current_user.role == "SUPER_ADMIN":
-            return current_user  # Super admin has unrestricted access
+            return current_user  # Super admin has access to view/access
         
         perms = current_user.permissions
         if not perms:
@@ -202,7 +224,7 @@ def bootstrap_super_admin(
     password: str,
     full_name: str = "System Super Admin"
 ) -> User:
-    """Safely creates initial Super Admin account."""
+    """Safely creates initial Super Admin account with Original Super Admin status."""
     clean_email = email.strip().lower()
     existing = db.query(User).filter(User.email == clean_email).first()
     
@@ -212,12 +234,13 @@ def bootstrap_super_admin(
     if existing:
         existing.role = "SUPER_ADMIN"
         existing.status = "ACTIVE"
+        existing.is_original_super_admin = True
         existing.password_hash = pw_hash
         existing.salt = salt
         existing.full_name = full_name
         db.commit()
         db.refresh(existing)
-        logger.info(f"Existing user '{clean_email}' promoted to SUPER_ADMIN.")
+        logger.info(f"Existing user '{clean_email}' promoted to Original SUPER_ADMIN.")
         return existing
     
     super_admin = User(
@@ -226,7 +249,8 @@ def bootstrap_super_admin(
         salt=salt,
         full_name=full_name,
         role="SUPER_ADMIN",
-        status="ACTIVE"
+        status="ACTIVE",
+        is_original_super_admin=True
     )
     db.add(super_admin)
     db.commit()

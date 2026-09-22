@@ -1,29 +1,23 @@
 import React, { useState } from 'react';
 import {
-  Shield,
+  ShieldCheck,
   LayoutDashboard,
   Users,
   Building2,
   Globe,
   FileSpreadsheet,
-  Layers,
   TrendingUp,
-  FileText,
   Settings,
   LogOut,
-  ArrowLeft,
-  ChevronRight,
-  ShieldAlert
+  ArrowLeft
 } from 'lucide-react';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { AdminDashboardView } from '../views/AdminDashboardView';
-import { AdminUsersView } from '../views/AdminUsersView';
+import { AdminCustomerUsersView } from '../views/AdminCustomerUsersView';
 import { AdminBusinessesView } from '../views/AdminBusinessesView';
 import { AdminScraperView } from '../views/AdminScraperView';
 import { AdminExportsView } from '../views/AdminExportsView';
-import { AdminPlansView } from '../views/AdminPlansView';
 import { AdminAnalyticsView } from '../views/AdminAnalyticsView';
-import { AdminAuditLogsView } from '../views/AdminAuditLogsView';
 import { AdminSettingsView } from '../views/AdminSettingsView';
 
 interface AdminLayoutProps {
@@ -37,55 +31,43 @@ export function AdminLayout({ onBackToWebsite }: AdminLayoutProps) {
   const navItems = [
     {
       id: 'dashboard',
-      label: 'Overview',
+      label: 'Operations Overview',
       icon: LayoutDashboard,
       allowed: true,
-    },
-    {
-      id: 'users',
-      label: 'User Management',
-      icon: Users,
-      allowed: hasPermission('can_manage_users'),
     },
     {
       id: 'businesses',
       label: 'Business Data',
       icon: Building2,
-      allowed: hasPermission('can_manage_businesses'),
+      allowed: isSuperAdmin || hasPermission('can_manage_businesses'),
     },
     {
       id: 'scrapers',
       label: 'Scraper Monitor',
       icon: Globe,
-      allowed: hasPermission('can_manage_scrapers'),
+      allowed: isSuperAdmin || hasPermission('can_manage_scrapers'),
     },
     {
       id: 'exports',
-      label: 'Export History',
+      label: 'Data Exports',
       icon: FileSpreadsheet,
-      allowed: hasPermission('can_manage_exports'),
+      allowed: isSuperAdmin || hasPermission('can_manage_exports'),
     },
     {
-      id: 'plans',
-      label: 'Plans & Limits',
-      icon: Layers,
-      allowed: isSuperAdmin || hasPermission('can_manage_plans'),
+      id: 'customers',
+      label: 'Customer Directory',
+      icon: Users,
+      allowed: isSuperAdmin || hasPermission('can_manage_users'),
     },
     {
       id: 'analytics',
       label: 'Analytics',
       icon: TrendingUp,
-      allowed: hasPermission('can_view_analytics'),
-    },
-    {
-      id: 'audit_logs',
-      label: 'Audit Trail',
-      icon: FileText,
-      allowed: isSuperAdmin || hasPermission('can_view_audit_logs'),
+      allowed: isSuperAdmin || hasPermission('can_view_analytics'),
     },
     {
       id: 'settings',
-      label: 'Security & Settings',
+      label: 'Account & Security',
       icon: Settings,
       allowed: true,
     },
@@ -94,25 +76,19 @@ export function AdminLayout({ onBackToWebsite }: AdminLayoutProps) {
   return (
     <div className="min-h-screen bg-[#F6F8F5] text-[#1D1E18] flex flex-col font-sans selection:bg-[#AAD2BA] selection:text-[#1D1E18]">
       {/* Top Admin Navigation Header */}
-      <header className="border-b border-[#DDE5DE] bg-white/95 backdrop-blur-md sticky top-0 z-40 shadow-sm">
+      <header className="border-b border-[#DDE5DE] bg-white/95 backdrop-blur-md sticky top-0 z-40 shadow-xs">
         <div className="max-w-[1440px] mx-auto px-3 sm:px-6 lg:px-8 h-16 sm:h-[68px] flex items-center justify-between gap-3">
-          {/* Brand & Super Admin Badge */}
+          {/* Brand & Admin Badge */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-[10px] bg-[#6B8F71] flex items-center justify-center text-white font-heading font-extrabold text-sm sm:text-base shadow-sm shrink-0">
-              <Shield className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-[10px] bg-[#6B8F71] flex items-center justify-center text-white font-extrabold text-sm sm:text-base shadow-sm shrink-0">
+              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-heading font-bold text-sm sm:text-base md:text-lg text-[#1D1E18] tracking-tight leading-tight truncate">
-                  Super Admin Console
+                  Admin Portal
                 </span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider ${
-                    isSuperAdmin
-                      ? 'bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA]'
-                      : 'bg-blue-50 text-blue-700 border border-blue-200'
-                  }`}
-                >
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider bg-[#EAF4EE] text-[#2F7D4A] border border-[#AAD2BA]">
                   {currentUser?.role?.replace('_', ' ')}
                 </span>
               </div>
@@ -126,7 +102,7 @@ export function AdminLayout({ onBackToWebsite }: AdminLayoutProps) {
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               onClick={onBackToWebsite}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#1D1E18] bg-[#F6F8F5] hover:bg-[#EEF4F0] border border-[#DDE5DE] transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#1D1E18] bg-[#F6F8F5] hover:bg-[#EEF4F0] border border-[#DDE5DE] transition-colors cursor-pointer"
               title="Return to public customer website"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-[#68736B]" />
@@ -136,7 +112,7 @@ export function AdminLayout({ onBackToWebsite }: AdminLayoutProps) {
 
             <button
               onClick={logout}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#C94A4A] bg-red-50 hover:bg-red-100 border border-[#C94A4A]/20 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#C94A4A] bg-red-50 hover:bg-red-100 border border-[#C94A4A]/20 transition-colors cursor-pointer"
               title="Sign out of Admin Session"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -157,9 +133,9 @@ export function AdminLayout({ onBackToWebsite }: AdminLayoutProps) {
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-heading font-semibold transition-all ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-heading font-semibold transition-all cursor-pointer ${
                       isActive
-                        ? 'bg-[#6B8F71] text-white shadow-sm'
+                        ? 'bg-[#6B8F71] text-white shadow-xs'
                         : 'text-[#68736B] hover:text-[#1D1E18] hover:bg-white'
                     }`}
                   >
@@ -175,19 +151,17 @@ export function AdminLayout({ onBackToWebsite }: AdminLayoutProps) {
       {/* Main Admin Workspace */}
       <main className="flex-1 w-full max-w-[1440px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         {activeTab === 'dashboard' && <AdminDashboardView onNavigateTab={(tab) => setActiveTab(tab)} />}
-        {activeTab === 'users' && <AdminUsersView />}
         {activeTab === 'businesses' && <AdminBusinessesView />}
         {activeTab === 'scrapers' && <AdminScraperView />}
         {activeTab === 'exports' && <AdminExportsView />}
-        {activeTab === 'plans' && <AdminPlansView />}
+        {activeTab === 'customers' && <AdminCustomerUsersView />}
         {activeTab === 'analytics' && <AdminAnalyticsView />}
-        {activeTab === 'audit_logs' && <AdminAuditLogsView />}
         {activeTab === 'settings' && <AdminSettingsView />}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[#DDE5DE] bg-white py-4 text-center text-xs text-[#68736B] px-4">
-        Google Business Profile &bull; Enterprise Super Admin System &bull; Cryptographic RBAC & MySQL
+        Google Business Profile &bull; Operations Admin Portal &bull; Cryptographic RBAC & MySQL
       </footer>
     </div>
   );

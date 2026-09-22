@@ -107,6 +107,7 @@ def admin_login(payload: AdminLoginRequest, request: Request, db: Session = Depe
         role=user.role,
         status=user.status,
         plan_id=user.plan_id,
+        is_original_super_admin=getattr(user, "is_original_super_admin", False),
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         permissions=perms_schema
@@ -140,6 +141,7 @@ def get_current_admin_profile(current_user: User = Depends(get_current_user)):
         role=current_user.role,
         status=current_user.status,
         plan_id=current_user.plan_id,
+        is_original_super_admin=getattr(current_user, "is_original_super_admin", False),
         last_login_at=current_user.last_login_at,
         created_at=current_user.created_at,
         permissions=perms_schema
@@ -147,7 +149,13 @@ def get_current_admin_profile(current_user: User = Depends(get_current_user)):
 
 @router.post("/change-password")
 def change_password(payload: ChangePasswordRequest, request: Request, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Allows authenticated user to update their account password."""
+    """Allows authenticated Original Super Admin to update security credentials."""
+    if current_user.role != "SUPER_ADMIN" or not getattr(current_user, "is_original_super_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Security and settings modifications are restricted to the Original Super Admin."
+        )
+
     if not verify_password(payload.current_password, current_user.password_hash, current_user.salt):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -225,6 +233,7 @@ def bootstrap_initial_super_admin(payload: BootstrapSuperAdminRequest, request: 
         role=admin.role,
         status=admin.status,
         plan_id=admin.plan_id,
+        is_original_super_admin=getattr(admin, "is_original_super_admin", True),
         last_login_at=admin.last_login_at,
         created_at=admin.created_at,
         permissions=perms_schema

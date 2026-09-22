@@ -36,6 +36,7 @@ class UserProfileResponse(BaseModel):
     role: str
     status: str
     plan_id: Optional[str] = None
+    is_original_super_admin: bool = False
     last_login_at: Optional[datetime] = None
     created_at: datetime
     permissions: Optional[PermissionSchema] = None
@@ -65,6 +66,8 @@ class UpdateUserRequest(BaseModel):
     status: Optional[str] = None
     plan_id: Optional[str] = None
     password: Optional[str] = None
+    current_password: Optional[str] = None
+    confirm_password: Optional[str] = None
 
 class UpdateUserStatusRequest(BaseModel):
     status: str  # ACTIVE, INACTIVE, SUSPENDED
@@ -86,6 +89,7 @@ class UserListItem(BaseModel):
     status: str
     plan_id: Optional[str] = None
     plan_name: Optional[str] = None
+    is_original_super_admin: bool = False
     last_login_at: Optional[datetime] = None
     created_at: datetime
     scraping_jobs_count: int = 0
