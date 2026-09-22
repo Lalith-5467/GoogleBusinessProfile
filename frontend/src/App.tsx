@@ -205,26 +205,6 @@ export function App() {
                   </span>
                 )}
               </div>
-
-              {/* Dedicated Admin Portal Button */}
-              <button
-                onClick={navigateToAdmin}
-                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#1E293B] bg-[#F1F5F9] hover:bg-[#E2E8F0] border border-[#CBD5E1] transition-colors cursor-pointer"
-                title="Open Operations Admin Portal"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-[#3B82F6]" />
-                <span className="hidden sm:inline font-heading">Admin</span>
-              </button>
-
-              {/* Super Admin Console Button */}
-              <button
-                onClick={navigateToSuperAdmin}
-                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-[8px] text-xs font-semibold text-[#1D1E18] bg-[#F6F8F5] hover:bg-[#EEF4F0] border border-[#DDE5DE] transition-colors shadow-2xs cursor-pointer"
-                title="Open Super Admin Console"
-              >
-                <Shield className="w-3.5 h-3.5 text-[#6B8F71]" />
-                <span className="hidden sm:inline font-heading">Super Admin</span>
-              </button>
             </div>
           </div>
         </header>
